@@ -65,4 +65,4 @@ ADB supports app installation, logs, screenshots, and shell commands for test in
 3. Prove accessibility insertion and an overlay control across apps, including microphone lifecycle restrictions.
 4. Add ATOM Lite BLE events to the same recording controls and validate background/reconnection behavior.
 
-Keep provider keys out of source control. The firmware will live under `firmware/` once implementation starts.
+Keep provider keys out of source control. ATOM Lite firmware now lives under [`firmware/`](firmware/README.md), with USB press/release logging and a BLE event service. Android BLE control is the next integration step.

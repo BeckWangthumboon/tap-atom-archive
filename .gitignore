@@ -13,3 +13,4 @@ local.properties
 .pio/
 captures/
 __pycache__/
+firmware/backups/

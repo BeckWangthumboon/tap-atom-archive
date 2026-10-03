@@ -44,6 +44,8 @@ Verified on the Samsung over wireless ADB: installation and launch succeeded, an
 
 Fish API access was verified separately using a short synthetic M4A speech clip: the API returned HTTP 200 and the expected transcript. The transcription build passes with zero lint errors; the user verified recording → Stop → transcript on the Samsung. The transcript appeared correctly on the phone, and no Android runtime crash was logged.
 
+ATOM Lite hardware was confirmed from the purchase link and USB chip inspection (ESP32-PICO-D4). The Mac detected its FTDI USB serial interface through the user's USB-C cable. The factory flash was backed up locally before replacement. Firmware under `firmware/` now logs debounced press/release edges over USB and advertises a custom BLE read/notify service. The firmware builds and uploads successfully, and the USB listener received its readiness message. Native debounce checks pass for switch bounce, holds, release, boot baseline, and timer rollover. During physical testing, the Mac received seven complete press/release pairs with consecutive sequence numbers 1–14 and no unmatched or repeated-state edges. Actual hold durations were not logged. Android BLE integration is the next check.
+
 ## Milestones
 
 1. **App foundation:** build and launch the Kotlin/Compose starter on the Samsung via USB debugging.
