@@ -13,7 +13,7 @@ Press the rear physical button once to start recording, feel a vibration when th
 | Platform | Android first; native Kotlin app with Jetpack Compose for the small setup/status UI. |
 | Development host | MacBook initially; eventually explore a VM with remote hardware access. |
 | Cross-app integration | Investigate accessibility-based insertion first so the existing keyboard stays usable; retain a small overlay for feedback and testing. |
-| Test phone | Existing Samsung Galaxy S23 family device, possibly S23+. Exact model, Android version, and One UI version are unconfirmed. |
+| Test phone | Samsung Galaxy S23+ (SM-S916U), running Android 16. One UI version is unconfirmed. |
 | Hardware | Existing M5Stack ATOM Lite, USB-powered initially. Mounting and battery design come later. |
 | Button firmware | Keep it simple: debounce and send press/release events through a custom BLE service. Interpret gestures on the phone. |
 | Phone responsibilities | BLE connection, microphone capture, recording feedback, transcription requests, and eventual text insertion or actions. |
@@ -36,6 +36,12 @@ The main feasibility risk is starting the microphone while another app is open. 
 
 Use that interaction as our reference. Investigate Android accessibility text/paste actions, preserving existing text and cursor placement; keep manual paste as a fallback. A custom keyboard is a fallback architecture, not the first choice. Start with tap-to-toggle; hold-to-talk can follow. Develop on stock Android with a locally installed debug app; an Android fork is outside scope.
 
+## Current implementation
+
+The app now supports on-screen start/stop recording, readiness vibration, an elapsed timer, local playback, and deletion. It keeps one AAC/M4A clip in app-private storage and stops capture/playback when the activity pauses, including leaving the app, locking, or rotation. Microphone permission is requested on first use; recording requires a fresh tap after granting permission. Transcription and hardware control are still pending.
+
+Verified on the Samsung over wireless ADB: installation and launch succeeded, and the user confirmed recording and playback work well. Build and Android lint passed with zero errors and two existing dependency-update warnings. Permission denial, interruptions, and saved-clip persistence remain to be verified on-device.
+
 ## Milestones
 
 1. **App foundation:** build and launch the Kotlin/Compose starter on the Samsung via USB debugging.
@@ -45,6 +51,6 @@ Use that interaction as our reference. Investigate Android accessibility text/pa
 
 ## Open checks and later scope
 
-Confirm the phone model and Android/One UI versions in Settings → About phone / Software information, plus Fish API credit eligibility. Choose the background recording approach after device testing.
+Confirm the One UI version in Settings → About phone / Software information, plus Fish API credit eligibility. Choose the background recording approach after device testing.
 
 Later possibilities: offline transcription, optional LLM cleanup, configurable gestures, app actions, a smaller battery-powered button, and iOS investigation. The first prototype is complete when physical tap-to-toggle dictation reliably produces a transcript in our Android app; cross-app use is the next milestone.

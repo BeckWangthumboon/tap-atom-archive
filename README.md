@@ -4,7 +4,11 @@ A personal Android experiment: a physical BLE button on the back of a phone for 
 
 ## Current state
 
-This repository contains a minimal Kotlin / Jetpack Compose app with a status screen and a sample text field. Recording, overlays, accessibility insertion, Fish Audio, and BLE are not implemented yet.
+This repository contains a Kotlin / Jetpack Compose app with on-screen microphone recording and playback. Audio stays in app-private storage on the phone; there is no network upload. Transcription, overlays, accessibility insertion, and BLE are not implemented yet.
+
+Tap **Start recording**, allow microphone access on first use, then tap **Start recording** again. A short vibration signals that capture has started. Tap **Stop recording**, then **Play recording** to listen. Only the latest clip is kept; starting another recording replaces it after microphone capture starts successfully. **Delete recording** removes it. Leaving the app, rotating the phone, or locking it stops recording and playback. Very short recordings may be discarded if Android cannot finalize the audio file.
+
+For device verification, test permission denial and retry, a five-second recording and playback, repeated recordings, deletion, app relaunch with a saved clip, and leaving or locking the phone while recording.
 
 ## Build
 
@@ -44,8 +48,8 @@ ADB supports app installation, logs, screenshots, and shell commands for test in
 
 ## Next steps
 
-1. Build and launch the starter on the Samsung.
-2. Add real tap-to-start / tap-to-stop foreground recording and Fish Audio transcription.
+1. Completed: build and launch on the Samsung Galaxy S23+ over wireless ADB.
+2. Verify local recording/playback on the Samsung, then add Fish Audio transcription.
 3. Prove accessibility insertion and an overlay control across apps, including microphone lifecycle restrictions.
 4. Add ATOM Lite BLE events to the same recording controls and validate background/reconnection behavior.
 
