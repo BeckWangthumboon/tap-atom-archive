@@ -39,7 +39,7 @@ The board advertises as `BackButton ATOM` and provides:
 
 The readable value reflects the current button state. A phone client should subscribe and establish a baseline before reacting to new press edges; reconnecting or holding the button during connection must not trigger dictation. Sequence numbers restart after a board reboot. The board advertises again after disconnect. Gesture interpretation belongs in the Android app.
 
-This firmware contains no microphone, API keys, or transcription code. Android BLE control is a separate integration step.
+The Android app uses this service for foreground tap-to-toggle recording. Power the ATOM over USB, open the app, tap **Connect button**, and allow Nearby devices access. Wait for **Button connected** before pressing. This firmware contains no microphone, API keys, or transcription code; those remain on the phone.
 
 ## Debounce checks
 

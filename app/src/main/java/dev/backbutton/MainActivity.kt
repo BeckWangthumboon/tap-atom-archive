@@ -39,12 +39,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.Lifecycle
 import kotlinx.coroutines.delay
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private lateinit var audio: AudioSession
     private lateinit var transcription: TranscriptionSession
+    private lateinit var button: BleButtonConnection
+    private val microphonePermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (!granted) audio.permissionDenied()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,21 +57,31 @@ class MainActivity : ComponentActivity() {
         WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = true
         audio = AudioSession(this)
         transcription = ViewModelProvider(this)[TranscriptionSession::class.java]
+        button = BleButtonConnection(this, ::toggleRecording) {
+            if (audio.isRecording) audio.stopRecording(
+                interrupted = true,
+                interruptionMessage = "Recording stopped because the button signal was lost.",
+            )
+        }
         setContent {
             MaterialTheme {
-                RecordingScreen(audio, transcription, ::requestRecording, ::openSettings) { text ->
+                RecordingScreen(audio, transcription, button, ::toggleRecording, ::openSettings) { text ->
                     getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Transcript", text))
                 }
             }
         }
     }
 
-    private fun requestRecording(requestPermission: () -> Unit) {
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+    private fun toggleRecording() {
+        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) || transcription.isTranscribing) return
+        if (audio.isRecording) {
+            audio.stopRecording()
+            if (audio.hasRecording) transcription.transcribe()
+        } else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             audio.startRecording()
             if (audio.isRecording) transcription.clear()
         } else {
-            requestPermission()
+            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
 
@@ -74,9 +89,20 @@ class MainActivity : ComponentActivity() {
         startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::button.isInitialized) button.resume()
+    }
+
     override fun onPause() {
         if (::audio.isInitialized) audio.pause()
+        if (::button.isInitialized) button.pause()
         super.onPause()
+    }
+
+    override fun onDestroy() {
+        if (::button.isInitialized) button.close()
+        super.onDestroy()
     }
 }
 
@@ -84,13 +110,14 @@ class MainActivity : ComponentActivity() {
 private fun RecordingScreen(
     audio: AudioSession,
     transcription: TranscriptionSession,
-    start: (() -> Unit) -> Unit,
+    button: BleButtonConnection,
+    toggleRecording: () -> Unit,
     openSettings: () -> Unit,
     copyTranscript: (String) -> Unit,
 ) {
-    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        // Require a fresh tap after the system dialog closes; never capture unexpectedly.
-        if (!granted) audio.permissionDenied()
+    val bluetoothPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        if (grants.values.all { it } && button.hasPermissions()) button.connect()
+        else button.permissionDenied()
     }
     var elapsed by remember(audio.startedAt) { mutableLongStateOf(0L) }
     LaunchedEffect(audio.isRecording) {
@@ -106,6 +133,22 @@ private fun RecordingScreen(
         ) {
             Text("Back Button", style = MaterialTheme.typography.headlineLarge)
             Text("Record a short clip and turn it into text.", style = MaterialTheme.typography.bodyLarge)
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Physical button", style = MaterialTheme.typography.titleLarge)
+                    Text(button.status)
+                    button.lastEvent?.let { Text(it) }
+                    Text("Presses received: ${button.presses}", style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(onClick = {
+                        if (button.connected || button.busy) button.disconnect()
+                        else if (button.hasPermissions()) button.connect()
+                        else bluetoothPermission.launch(arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT))
+                    }) {
+                        Text(if (button.connected) "Disconnect button" else if (button.busy) "Cancel connection" else "Connect button")
+                    }
+                    Text("Keep this app open. Press once to record, again to stop and transcribe.", style = MaterialTheme.typography.bodySmall)
+                }
+            }
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
@@ -128,12 +171,7 @@ private fun RecordingScreen(
                 }
             }
             Button(
-                onClick = {
-                    if (audio.isRecording) {
-                        audio.stopRecording()
-                        if (audio.hasRecording) transcription.transcribe()
-                    } else start { permission.launch(Manifest.permission.RECORD_AUDIO) }
-                },
+                onClick = toggleRecording,
                 enabled = !transcription.isTranscribing,
                 modifier = Modifier.fillMaxWidth(),
             ) {

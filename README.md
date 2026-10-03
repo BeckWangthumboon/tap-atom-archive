@@ -4,11 +4,17 @@ A personal Android experiment: a physical BLE button on the back of a phone for 
 
 ## Current state
 
-This repository contains a Kotlin / Jetpack Compose app with on-screen recording, playback, and Fish Audio transcription. Tapping Stop uploads the saved clip to Fish Audio and displays a transcript with a Copy button. Audio and the latest transcript are kept in app-private storage. Overlays, accessibility insertion, and BLE are not implemented yet.
+This repository contains a Kotlin / Jetpack Compose app with on-screen and ATOM Lite Bluetooth recording controls, playback, and Fish Audio transcription. Stopping normally uploads the saved clip to Fish Audio and displays a transcript with a Copy button. Audio and the latest transcript are kept in app-private storage. Overlays and accessibility insertion are not implemented yet.
 
 Tap **Start recording**, allow microphone access on first use, then tap **Start recording** again. A short vibration signals that capture has started. Tap **Stop recording**, to upload and transcribe, then **Play recording** to listen. You can also tap **Transcribe recording** to send an existing clip, or **Retry transcription** after a failure. Only the latest clip is kept; starting another recording replaces it after microphone capture starts successfully. **Delete recording** removes the clip and transcript. Leaving the app, rotating the phone, or locking it stops recording and playback without starting an upload. An upload you already started can continue while the app is backgrounded or rotated; force-stopping the app interrupts it. Very short recordings may be discarded if Android cannot finalize the audio file.
 
 For device verification, test permission denial and retry, a five-second recording and playback, repeated recordings, deletion, app relaunch with a saved clip, and leaving or locking the phone while recording.
+
+## Physical button
+
+Keep the ATOM Lite powered over USB and Bluetooth enabled on the phone. In the app, tap **Connect button** and allow **Nearby devices** access. Once **Button connected** appears, press the large ATOM button once to record, speak, and press again to stop and transcribe. Release and long holds do not toggle recording. Presses received are shown on screen; presses during transcription are ignored.
+
+This first Bluetooth version works while the app is open. Leaving or locking the phone stops capture and disconnects the button; reopening the app reconnects to the remembered ATOM. A connection loss or missing event stops an active recording without uploading it. An unexpected disconnect gets one automatic reconnection attempt; tap **Connect button** to retry if it fails. **Disconnect button** forgets the remembered device. Connecting while the button is held does not start recording: a fresh press is required.
 
 ## Build
 
@@ -17,7 +23,7 @@ Use JDK 17 or 21, Android SDK Platform 35, and Build Tools 35.0.0. The checked-i
 Open the repository in Android Studio, or set `ANDROID_HOME` to your SDK directory and run:
 
 ```sh
-./gradlew :app:assembleDebug :app:lintDebug
+./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
 ```
 
 Alternatively, put `sdk.dir=/absolute/path/to/android-sdk` in the ignored `local.properties` file. This starter uses the API 35 toolchain already installed on the development machine; reassess the target SDK before the background-service feasibility tests. The minimum supported device version is Android 13.
@@ -61,8 +67,8 @@ ADB supports app installation, logs, screenshots, and shell commands for test in
 ## Next steps
 
 1. Completed: build and launch on the Samsung Galaxy S23+ over wireless ADB.
-2. Verify recording → Fish Audio transcription → copying text on the Samsung.
-3. Prove accessibility insertion and an overlay control across apps, including microphone lifecycle restrictions.
-4. Add ATOM Lite BLE events to the same recording controls and validate background/reconnection behavior.
+2. Completed: verify on-screen recording → Fish Audio transcription on the Samsung.
+3. Completed: verify ATOM Bluetooth press → recording with vibration → second press → transcript on the Samsung, plus automatic reconnect after leaving and reopening the app. Check signal loss during capture next.
+4. Prove accessibility insertion and an overlay control across apps, including microphone lifecycle restrictions.
 
-Keep provider keys out of source control. ATOM Lite firmware now lives under [`firmware/`](firmware/README.md), with USB press/release logging and a BLE event service. Android BLE control is the next integration step.
+Keep provider keys out of source control. ATOM Lite firmware lives under [`firmware/`](firmware/README.md), with USB press/release logging and the BLE event service used by the Android app.

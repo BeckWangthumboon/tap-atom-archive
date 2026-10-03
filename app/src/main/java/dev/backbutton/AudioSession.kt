@@ -89,7 +89,10 @@ class AudioSession(private val context: Context) {
         }
     }
 
-    fun stopRecording(interrupted: Boolean = false) {
+    fun stopRecording(
+        interrupted: Boolean = false,
+        interruptionMessage: String = "Recording stopped because you left the app.",
+    ) {
         val active = recorder ?: return
         recorder = null
         isRecording = false
@@ -98,7 +101,7 @@ class AudioSession(private val context: Context) {
             if (!pending.renameTo(recording)) error("Could not save recording")
             hasRecording = true
             durationMillis = SystemClock.elapsedRealtime() - startedAt
-            message = if (interrupted) "Recording stopped because you left the app." else null
+            message = if (interrupted) interruptionMessage else null
         } catch (_: Exception) {
             pending.delete()
             hasRecording = recording.exists()
