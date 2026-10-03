@@ -38,9 +38,11 @@ Use that interaction as our reference. Investigate Android accessibility text/pa
 
 ## Current implementation
 
-The app now supports on-screen start/stop recording, readiness vibration, an elapsed timer, local playback, and deletion. It keeps one AAC/M4A clip in app-private storage and stops capture/playback when the activity pauses, including leaving the app, locking, or rotation. Microphone permission is requested on first use; recording requires a fresh tap after granting permission. Transcription and hardware control are still pending.
+The app now supports on-screen start/stop recording, readiness vibration, an elapsed timer, local playback, and deletion. It keeps one AAC/M4A clip in app-private storage and stops capture/playback when the activity pauses, including leaving the app, locking, or rotation. Microphone permission is requested on first use; recording requires a fresh tap after granting permission. Tapping Stop now sends the saved M4A clip to Fish Audio (`transcribe-1-pro`) and displays copyable text. Interrupted recording does not start an upload. The API key is provisioned from the ignored `.env` file into app-private storage over ADB; it is not included in the APK. Hardware control is still pending.
 
 Verified on the Samsung over wireless ADB: installation and launch succeeded, and the user confirmed recording and playback work well. Build and Android lint passed with zero errors and two existing dependency-update warnings. Permission denial, interruptions, and saved-clip persistence remain to be verified on-device.
+
+Fish API access was verified separately using a short synthetic M4A speech clip: the API returned HTTP 200 and the expected transcript. The transcription build passes with zero lint errors; the user verified recording → Stop → transcript on the Samsung. The transcript appeared correctly on the phone, and no Android runtime crash was logged.
 
 ## Milestones
 
@@ -51,6 +53,6 @@ Verified on the Samsung over wireless ADB: installation and launch succeeded, an
 
 ## Open checks and later scope
 
-Confirm the One UI version in Settings → About phone / Software information, plus Fish API credit eligibility. Choose the background recording approach after device testing.
+Confirm the One UI version in Settings → About phone / Software information, plus ongoing Fish API credit availability. Choose the background recording approach after device testing.
 
 Later possibilities: offline transcription, optional LLM cleanup, configurable gestures, app actions, a smaller battery-powered button, and iOS investigation. The first prototype is complete when physical tap-to-toggle dictation reliably produces a transcript in our Android app; cross-app use is the next milestone.
