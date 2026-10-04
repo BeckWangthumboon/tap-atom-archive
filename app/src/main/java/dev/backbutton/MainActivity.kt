@@ -158,7 +158,7 @@ private fun RecordingScreen(
                     if (!notificationsAllowed) OutlinedButton(onClick = { notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) }) {
                         Text("Allow status notifications")
                     }
-                    Text("Open a LINE or browser text field. Tap Record above the keyboard, then Stop to insert text. Drag the control to move it.")
+                    Text("Tap Record, then Stop, or hold until the vibration, speak, and release to insert text. Drag before recording starts to move the control; move during a hold to cancel.")
                     Text("The microphone stays off until you record. Enable dictation again after the app restarts.", style = MaterialTheme.typography.bodySmall)
                     session.notice?.let { Text(it) }
                 }
@@ -176,7 +176,7 @@ private fun RecordingScreen(
                     }) {
                         Text(if (button.connected) "Disconnect button" else if (button.busy) "Cancel connection" else "Connect button")
                     }
-                    Text("Press once to record, again to stop and transcribe. Enable cross-app dictation to use the button in LINE or your browser.", style = MaterialTheme.typography.bodySmall)
+                    Text("Click once to record, again to stop. Or hold until the vibration, speak, and release to transcribe. Enable cross-app dictation to use the button in LINE or your browser.", style = MaterialTheme.typography.bodySmall)
                 }
             }
             Card(modifier = Modifier.fillMaxWidth()) {

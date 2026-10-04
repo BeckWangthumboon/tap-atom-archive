@@ -39,6 +39,7 @@ class DictationAccessibilityService : AccessibilityService() {
     private var params: WindowManager.LayoutParams? = null
     private var captured: Target? = null
     private var drag = false
+    private var touchCancelled = false
     private var downX = 0f
     private var downY = 0f
     private var originX = 0
@@ -73,6 +74,7 @@ class DictationAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         if (current === this) connection = null
+        cancelPresses()
         dictation.accessibilityConnected = false
         if (dictation.recordingInField) dictation.interrupt("Recording stopped because accessibility was turned off.")
         cancelTarget()
@@ -96,6 +98,7 @@ class DictationAccessibilityService : AccessibilityService() {
     }
 
     private fun editorChanged() {
+        cancelPresses()
         editorGeneration++
         cancelTarget()
         if (dictation.recordingInField) dictation.interrupt("Recording stopped because the text field changed.")
@@ -128,30 +131,36 @@ class DictationAccessibilityService : AccessibilityService() {
     fun toggle() {
         if (!dictation.crossAppEnabled || dictation.transcription.isTranscribing) return
         if (dictation.audio.isRecording) {
-            dictation.toggle()
+            dictation.finish()
             update()
             return
         }
+        start()
+    }
+
+    fun start(heldBy: DictationSession.Input? = null): Boolean {
+        if (!dictation.crossAppEnabled || dictation.transcription.isTranscribing || dictation.audio.isRecording) return false
         if (!eligibleEditor() || keyboardBounds() == null) {
             tell("Tap a LINE or browser text field first.")
-            return
+            return false
         }
         val target = snapshot()
         if (target == null) {
             tell("This field does not expose its cursor. Use dictation in Back Button and copy the result.")
-            return
+            return false
         }
         captured = target
-        dictation.toggle { result ->
+        val started = dictation.start(insert = { result ->
             runCatching { insert(target, result) }.onFailure {
                 tell("Could not insert here. Your transcript is saved in Back Button.")
             }
-        }
-        if (!dictation.audio.isRecording) {
+        }, heldBy = heldBy)
+        if (!started) {
             cancelTarget()
             tell(dictation.audio.message ?: "Could not start recording. Open Back Button and enable dictation again.")
         }
         update()
+        return started
     }
 
     private fun insert(target: Target, result: String) {
@@ -184,6 +193,11 @@ class DictationAccessibilityService : AccessibilityService() {
     fun cancelTarget() {
         captured?.valid = false
         captured = null
+    }
+
+    private fun cancelPresses() {
+        dictation.cancelPress(DictationSession.Input.CONTROL)
+        dictation.cancelPress(DictationSession.Input.BUTTON)
     }
 
     private fun update() {
@@ -231,12 +245,23 @@ class DictationAccessibilityService : AccessibilityService() {
                     when (event.actionMasked) {
                         MotionEvent.ACTION_DOWN -> {
                             downX = event.rawX; downY = event.rawY
-                            originX = layout.x; originY = layout.y; drag = false
+                            originX = layout.x; originY = layout.y; drag = false; touchCancelled = false
+                            dictation.press(DictationSession.Input.CONTROL)
                             true
                         }
                         MotionEvent.ACTION_MOVE -> {
+                            if (touchCancelled) return@setOnTouchListener true
                             val dx = event.rawX - downX; val dy = event.rawY - downY
-                            if (abs(dx) + abs(dy) > ViewConfiguration.get(this@DictationAccessibilityService).scaledTouchSlop) drag = true
+                            if (!drag && abs(dx) + abs(dy) > ViewConfiguration.get(this@DictationAccessibilityService).scaledTouchSlop) {
+                                val holding = dictation.heldBy == DictationSession.Input.CONTROL
+                                dictation.cancelPress(DictationSession.Input.CONTROL)
+                                if (holding) {
+                                    touchCancelled = true
+                                    update()
+                                    return@setOnTouchListener true
+                                }
+                                drag = true
+                            }
                             if (drag) {
                                 layout.x = (originX + dx.toInt()).coerceIn(dp(4), (bounds.width() - width - dp(4)).coerceAtLeast(dp(4)))
                                 layout.y = (originY + dy.toInt()).coerceIn(dp(32), (bounds.height() - height - dp(40)).coerceAtLeast(dp(32)))
@@ -247,11 +272,19 @@ class DictationAccessibilityService : AccessibilityService() {
                         MotionEvent.ACTION_UP -> {
                             if (drag) position.edit().putFloat("horizontal", layout.x.toFloat() / bounds.width())
                                 .putInt("above-keyboard", (keyboardTop ?: bounds.height() - dp(40)) - layout.y - height).apply()
-                            else view.performClick()
+                            else if (!touchCancelled) dictation.release(DictationSession.Input.CONTROL) { view.performClick() }
                             drag = false
+                            touchCancelled = false
+                            update()
                             true
                         }
-                        MotionEvent.ACTION_CANCEL -> { drag = false; true }
+                        MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_DOWN -> {
+                            dictation.cancelPress(DictationSession.Input.CONTROL)
+                            drag = false
+                            touchCancelled = true
+                            update()
+                            true
+                        }
                         else -> false
                     }
                 }
@@ -274,13 +307,16 @@ class DictationAccessibilityService : AccessibilityService() {
         val recording = dictation.recordingInField
         val processing = dictation.transcription.isTranscribing && captured != null
         val label = when {
+            recording && dictation.heldBy == DictationSession.Input.CONTROL -> "Release ${((SystemClock.elapsedRealtime() - dictation.audio.startedAt) / 1000)}s"
             recording -> "■ Stop ${((SystemClock.elapsedRealtime() - dictation.audio.startedAt) / 1000)}s"
             processing -> "Working…"
             else -> "● Record"
         }
         if (control.text.toString() != label) {
             control.text = label
-            control.contentDescription = if (recording) "Stop dictation" else if (processing) "Transcribing recording" else "Start dictation. Drag to move."
+            control.contentDescription = if (recording && dictation.heldBy == DictationSession.Input.CONTROL) "Release to finish dictation. Move to cancel."
+                else if (recording) "Stop dictation" else if (processing) "Transcribing recording"
+                else "Start dictation. Hold to record until release. Drag to move."
             control.background = GradientDrawable().apply {
                 cornerRadius = dp(20).toFloat()
                 setColor(if (recording) Color.rgb(169, 35, 51) else Color.rgb(43, 46, 60))
@@ -302,6 +338,7 @@ class DictationAccessibilityService : AccessibilityService() {
     }
 
     private fun removePill() {
+        dictation.cancelPress(DictationSession.Input.CONTROL)
         pill?.let { runCatching { manager.removeView(it) } }
         pill = null
         params = null

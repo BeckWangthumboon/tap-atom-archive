@@ -31,6 +31,7 @@ import java.util.UUID
 class BleButtonConnection(
     private val context: Context,
     private val onPress: () -> Unit,
+    private val onRelease: () -> Unit,
     private val onSignalLost: () -> Unit,
 ) {
     companion object {
@@ -208,6 +209,7 @@ class BleButtonConnection(
                     ButtonEvents.Action.RELEASE -> {
                         lastEvent = "Button released"
                         Log.i("BackButtonBLE", "RELEASE")
+                        onRelease()
                     }
                     ButtonEvents.Action.GAP -> {
                         lastEvent = "Signal skipped; recording stopped safely"
