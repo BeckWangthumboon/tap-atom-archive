@@ -4,10 +4,9 @@ A place to discuss and prioritize future work with the user. Keep completed-work
 
 ## Immediate work
 
-- **UX first today:** review the current experience on the phone with the user, then clean up confusing, awkward, or unfinished elements. Aim for a good, coherent, usable experience—roughly 80–90% of the desired quality—without pursuing perfect polish.
-- Review both surfaces: one main app for configuration, and the passive floating indicator and transcript recovery used in other apps. Detailed UX choices will follow the user's review.
-- Improve reliability: Bluetooth reconnection, interrupted recordings, idle/background behavior, and physical-button dictation across apps. Clean up code where it helps these changes or the UX work.
-- After the UX review, discuss moving beyond the ATOM prototype: what the next button needs and how it could integrate into a phone case. Discussion can happen now; hardware work depends on choosing and obtaining materials.
+- **Hardware discussion next:** define the next button beyond the ATOM prototype: placement and finger reach, click/hold feel, accidental-press protection, acceptable size and thickness, mounting or phone-case integration, and power/charging. Choose components and obtain materials after agreeing on these requirements.
+- Build a physical mockup to check grip, reach, and button placement before committing to the electronics or enclosure.
+- Continue everyday reliability checks: Bluetooth reconnection, interrupted recordings, idle/background behavior, and physical-button dictation across apps. Address issues as they appear.
 
 ## Future work
 
@@ -19,5 +18,5 @@ A place to discuss and prioritize future work with the user. Keep completed-work
 ### Optional
 
 - Explore existing local speech-to-text models or multiple providers. Fish Audio remains the testing default; avoid reinventing speech recognition.
-- Pursue exceptional UX polish after the core experience is good and useful. This is separate from the immediate cleanup.
+- Revisit additional UX polish if everyday use reveals a need.
 - Consider other AI actions, configurable gestures, or transcript cleanup later, if the user wants them.

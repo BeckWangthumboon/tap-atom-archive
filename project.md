@@ -11,7 +11,7 @@ A personal experiment in a physical interface for AI on mobile: a button on the 
 
 ## Current baseline
 
-Recording, Fish Audio transcription, Bluetooth button control, compact cross-app dictation, hold-to-talk, and recording without a selected input field are implemented. The user has verified the core interactions on the Samsung, including LINE and browser text fields. Everyday reliability and hardware ergonomics still need exploration.
+Recording, Fish Audio transcription, Bluetooth button control, compact cross-app dictation, hold-to-talk, and recording without a selected input field are implemented. The user has verified the core interactions on the Samsung, including LINE and browser text fields. The user considers the current UX settled; the next focus is hardware design. Everyday reliability and hardware ergonomics still need exploration.
 
 ## Documentation
 
