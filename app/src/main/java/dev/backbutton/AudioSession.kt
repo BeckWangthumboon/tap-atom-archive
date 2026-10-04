@@ -16,7 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import java.io.File
 
-/** Owns microphone and playback resources only while the activity is visible. */
+/** Microphone and playback resources owned by the shared dictation session. */
 class AudioSession(private val context: Context) {
     private val recording = File(context.filesDir, "latest-recording.m4a")
     private val pending = File(context.filesDir, "recording-in-progress.m4a")

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Back Button dictation check</title>
+<style>
+body { font: 18px system-ui; padding: 20px; background: #f5f5fa; }
+label { display: block; margin: 20px 0 8px; }
+textarea, input { box-sizing: border-box; width: 100%; font: inherit; padding: 12px; }
+textarea { height: 110px; }
+</style>
+<h1>Dictation check</h1>
+<p>These fields stay on this page. Nothing is submitted.</p>
+<label for="message">Message</label>
+<textarea id="message" placeholder="Tap here, then Record"></textarea>
+<label for="existing">Existing text: try inserting or replacing a selection</label>
+<textarea id="existing">Meet me at noon.</textarea>
+<label for="other">Another field: use to check focus changes</label>
+<input id="other" type="text">
+<label for="password">Password: the control should stay hidden</label>
+<input id="password" type="password" autocomplete="off">
+</html>

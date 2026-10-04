@@ -1,7 +1,6 @@
 package dev.backbutton
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -9,18 +8,17 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.io.File
 import java.net.SocketTimeoutException
 import java.io.IOException
 
-class TranscriptionSession(application: Application) : AndroidViewModel(application) {
+class TranscriptionSession(context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val client = FishAudioClient()
-    private val keyFile = File(application.filesDir, "fish-audio-key")
-    private val recordingFile = File(application.filesDir, "latest-recording.m4a")
-    private val transcriptFile = File(application.filesDir, "latest-transcript.txt")
+    private val keyFile = File(context.filesDir, "fish-audio-key")
+    private val recordingFile = File(context.filesDir, "latest-recording.m4a")
+    private val transcriptFile = File(context.filesDir, "latest-transcript.txt")
 
     var isTranscribing by mutableStateOf(false)
         private set
@@ -36,7 +34,7 @@ class TranscriptionSession(application: Application) : AndroidViewModel(applicat
         error = null
     }
 
-    fun transcribe() {
+    fun transcribe(onResult: ((String) -> Unit)? = null) {
         if (isTranscribing) return
         val key = runCatching { keyFile.readText().trim() }.getOrDefault("")
         if (key.isBlank()) {
@@ -50,6 +48,7 @@ class TranscriptionSession(application: Application) : AndroidViewModel(applicat
                 val result = client.transcribe(recordingFile, key)
                 transcriptFile.writeText(result)
                 transcript = result
+                onResult?.invoke(result)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: SocketTimeoutException) {
@@ -66,9 +65,5 @@ class TranscriptionSession(application: Application) : AndroidViewModel(applicat
                 isTranscribing = false
             }
         }
-    }
-
-    override fun onCleared() {
-        scope.cancel()
     }
 }

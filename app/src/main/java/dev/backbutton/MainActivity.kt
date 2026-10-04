@@ -33,12 +33,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.Lifecycle
 import kotlinx.coroutines.delay
 import java.util.Locale
@@ -47,6 +48,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var audio: AudioSession
     private lateinit var transcription: TranscriptionSession
     private lateinit var button: BleButtonConnection
+    private lateinit var session: DictationSession
     private val microphonePermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (!granted) audio.permissionDenied()
     }
@@ -55,17 +57,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = true
-        audio = AudioSession(this)
-        transcription = ViewModelProvider(this)[TranscriptionSession::class.java]
-        button = BleButtonConnection(this, ::toggleRecording) {
-            if (audio.isRecording) audio.stopRecording(
-                interrupted = true,
-                interruptionMessage = "Recording stopped because the button signal was lost.",
-            )
-        }
+        session = dictation
+        audio = session.audio
+        transcription = session.transcription
+        button = session.button
         setContent {
             MaterialTheme {
-                RecordingScreen(audio, transcription, button, ::toggleRecording, ::openSettings) { text ->
+                RecordingScreen(session, ::toggleRecording, ::enableCrossApp, ::openAccessibility, ::openSettings) { text ->
                     getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Transcript", text))
                 }
             }
@@ -74,15 +72,27 @@ class MainActivity : ComponentActivity() {
 
     private fun toggleRecording() {
         if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) || transcription.isTranscribing) return
-        if (audio.isRecording) {
-            audio.stopRecording()
-            if (audio.hasRecording) transcription.transcribe()
-        } else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            audio.startRecording()
-            if (audio.isRecording) transcription.clear()
+        if (audio.isRecording || checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            session.toggle()
         } else {
             microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
         }
+    }
+
+    private fun enableCrossApp() {
+        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
+        if (session.crossAppEnabled) DictationService.disable(this)
+        else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+        } else {
+            try { DictationService.enable(this) }
+            catch (_: IllegalStateException) { session.notice = "Keep Back Button open and tap Enable again." }
+            catch (_: SecurityException) { session.notice = "Allow microphone access, then tap Enable again." }
+        }
+    }
+
+    private fun openAccessibility() {
+        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
     }
 
     private fun openSettings() {
@@ -91,30 +101,33 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (::button.isInitialized) button.resume()
+        if (::session.isInitialized) {
+            session.activityVisible = true
+            button.resume()
+        }
     }
 
     override fun onPause() {
-        if (::audio.isInitialized) audio.pause()
-        if (::button.isInitialized) button.pause()
+        if (::session.isInitialized) session.leaveActivity()
         super.onPause()
-    }
-
-    override fun onDestroy() {
-        if (::button.isInitialized) button.close()
-        super.onDestroy()
     }
 }
 
 @Composable
 private fun RecordingScreen(
-    audio: AudioSession,
-    transcription: TranscriptionSession,
-    button: BleButtonConnection,
+    session: DictationSession,
     toggleRecording: () -> Unit,
+    enableCrossApp: () -> Unit,
+    openAccessibility: () -> Unit,
     openSettings: () -> Unit,
     copyTranscript: (String) -> Unit,
 ) {
+    val audio = session.audio
+    val transcription = session.transcription
+    val button = session.button
+    val context = LocalContext.current
+    var notificationsAllowed by remember { mutableStateOf(context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { notificationsAllowed = it }
     val bluetoothPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         if (grants.values.all { it } && button.hasPermissions()) button.connect()
         else button.permissionDenied()
@@ -135,6 +148,23 @@ private fun RecordingScreen(
             Text("Record a short clip and turn it into text.", style = MaterialTheme.typography.bodyLarge)
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Dictate in other apps", style = MaterialTheme.typography.titleLarge)
+                    Text(if (session.crossAppEnabled) "Dictation ready" else "Cross-app dictation is off")
+                    Text(if (session.accessibilityConnected) "Text insertion access enabled" else "Enable Back Button dictation in Accessibility settings.")
+                    OutlinedButton(onClick = openAccessibility) { Text("Accessibility settings") }
+                    Button(onClick = enableCrossApp) {
+                        Text(if (session.crossAppEnabled) "Turn off cross-app dictation" else "Enable cross-app dictation")
+                    }
+                    if (!notificationsAllowed) OutlinedButton(onClick = { notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) }) {
+                        Text("Allow status notifications")
+                    }
+                    Text("Open a LINE or browser text field. Tap Record above the keyboard, then Stop to insert text. Drag the control to move it.")
+                    Text("The microphone stays off until you record. Enable dictation again after the app restarts.", style = MaterialTheme.typography.bodySmall)
+                    session.notice?.let { Text(it) }
+                }
+            }
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Physical button", style = MaterialTheme.typography.titleLarge)
                     Text(button.status)
                     button.lastEvent?.let { Text(it) }
@@ -146,7 +176,7 @@ private fun RecordingScreen(
                     }) {
                         Text(if (button.connected) "Disconnect button" else if (button.busy) "Cancel connection" else "Connect button")
                     }
-                    Text("Keep this app open. Press once to record, again to stop and transcribe.", style = MaterialTheme.typography.bodySmall)
+                    Text("Press once to record, again to stop and transcribe. Enable cross-app dictation to use the button in LINE or your browser.", style = MaterialTheme.typography.bodySmall)
                 }
             }
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -185,7 +215,7 @@ private fun RecordingScreen(
                     Text(if (audio.isPlaying || audio.isPreparingPlayback) "Stop playback" else "Play recording")
                 }
                 OutlinedButton(
-                    onClick = transcription::transcribe,
+                    onClick = { transcription.transcribe() },
                     enabled = !transcription.isTranscribing,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
