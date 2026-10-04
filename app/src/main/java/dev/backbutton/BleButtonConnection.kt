@@ -167,7 +167,7 @@ class BleButtonConnection(
                 val characteristic = current.getService(SERVICE)?.getCharacteristic(EVENT)
                 val descriptor = characteristic?.getDescriptor(CCCD)
                 if (code != BluetoothGatt.GATT_SUCCESS || characteristic == null || descriptor == null) {
-                    fail("This device does not have the Back Button firmware.")
+                    fail("This device does not have the tap firmware.")
                 } else if (!current.setCharacteristicNotification(characteristic, true) ||
                     current.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) != BluetoothStatusCodes.SUCCESS) {
                     fail("Could not subscribe to button presses.")

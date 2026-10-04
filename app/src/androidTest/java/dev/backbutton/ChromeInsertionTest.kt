@@ -85,61 +85,24 @@ class ChromeInsertionTest {
         try { assertTrue(automation.injectInputEvent(event, true)) } finally { event.recycle() }
     }
 
+    private fun waitForIdle(service: DictationAccessibilityService) {
+        waitFor { service.javaClass.getDeclaredField("pill").apply { isAccessible = true }.get(service) == null }
+    }
+
     private fun holdChecks(service: DictationAccessibilityService) {
-        // First exercise real touch delivery and Android's delayed hold recognition.
-        var position = controlPosition(service)
-        var downAt = SystemClock.uptimeMillis()
-        touch(MotionEvent.ACTION_DOWN, position, downAt)
-        waitFor { context.dictation.heldBy == DictationSession.Input.CONTROL && context.dictation.audio.isRecording }
-        SystemClock.sleep(1500)
-        touch(MotionEvent.ACTION_UP, position, downAt)
-        waitFor { !context.dictation.audio.isRecording && context.dictation.audio.hasRecording }
-        instrumentation.runOnMainSync {
-            assertNull(context.dictation.heldBy)
-            assertEquals("Fish Audio key is not configured yet.", context.dictation.transcription.error)
-        }
-
-        // A short tap still latches capture until another short tap, after a completed hold.
-        position = controlPosition(service)
-        downAt = SystemClock.uptimeMillis()
-        touch(MotionEvent.ACTION_DOWN, position, downAt)
-        touch(MotionEvent.ACTION_UP, position, downAt)
-        waitFor { context.dictation.audio.isRecording }
-        instrumentation.runOnMainSync { assertNull(context.dictation.heldBy) }
-        SystemClock.sleep(1500)
-        downAt = SystemClock.uptimeMillis()
-        touch(MotionEvent.ACTION_DOWN, position, downAt)
-        touch(MotionEvent.ACTION_UP, position, downAt)
-        waitFor { !context.dictation.audio.isRecording }
-
-        // Movement after the hold starts cancels, retaining the clip without transcription.
-        downAt = SystemClock.uptimeMillis()
-        touch(MotionEvent.ACTION_DOWN, position, downAt)
-        waitFor { context.dictation.heldBy == DictationSession.Input.CONTROL }
-        SystemClock.sleep(1500)
-        val moved = Pair(position.first + 40 * context.resources.displayMetrics.density, position.second)
-        touch(MotionEvent.ACTION_MOVE, moved, downAt)
-        waitFor { !context.dictation.audio.isRecording }
-        touch(MotionEvent.ACTION_UP, moved, downAt)
-        instrumentation.runOnMainSync {
-            assertTrue(context.dictation.audio.hasRecording)
-            assertNull("Cancelled hold must not transcribe", context.dictation.transcription.error)
-        }
-
-        // Movement before the threshold drags without recording; stale timers stay inert.
-        downAt = SystemClock.uptimeMillis()
-        touch(MotionEvent.ACTION_DOWN, position, downAt)
-        touch(MotionEvent.ACTION_MOVE, moved, downAt)
-        touch(MotionEvent.ACTION_UP, moved, downAt)
-        SystemClock.sleep(800)
-        instrumentation.runOnMainSync {
-            assertFalse(context.dictation.audio.isRecording)
-            assertNull(context.dictation.transcription.error)
-        }
-
-        // Exercise the same path used by validated BLE PRESS/RELEASE edges, without BLE radio.
+        waitForIdle(service)
+        // Exercise the exact PRESS/RELEASE path used by the Bluetooth button.
         instrumentation.runOnMainSync { context.dictation.press(DictationSession.Input.BUTTON) }
         waitFor { context.dictation.heldBy == DictationSession.Input.BUTTON && context.dictation.audio.isRecording }
+        waitForControl(service)
+        instrumentation.runOnMainSync {
+            val params = service.javaClass.getDeclaredField("params").apply { isAccessible = true }.get(service)
+                as WindowManager.LayoutParams
+            assertTrue(params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0)
+            val pill = service.javaClass.getDeclaredField("pill").apply { isAccessible = true }.get(service) as android.view.View
+            assertFalse(pill.isClickable)
+            assertFalse(pill.isFocusable)
+        }
         SystemClock.sleep(1500)
         instrumentation.runOnMainSync { context.dictation.release(DictationSession.Input.BUTTON) }
         waitFor { !context.dictation.audio.isRecording }
@@ -147,6 +110,41 @@ class ChromeInsertionTest {
             assertNull(context.dictation.heldBy)
             assertEquals("Fish Audio key is not configured yet.", context.dictation.transcription.error)
         }
+        waitForControl(service) // Brief failure feedback, then the idle surface disappears.
+        waitForIdle(service)
+
+        // Short physical-button clicks still latch recording until the next click.
+        instrumentation.runOnMainSync {
+            context.dictation.press(DictationSession.Input.BUTTON)
+            context.dictation.release(DictationSession.Input.BUTTON)
+        }
+        waitFor { context.dictation.audio.isRecording }
+        waitForControl(service)
+        val position = controlPosition(service)
+        val downAt = SystemClock.uptimeMillis()
+        touch(MotionEvent.ACTION_DOWN, position, downAt)
+        touch(MotionEvent.ACTION_UP, position, downAt)
+        SystemClock.sleep(300)
+        instrumentation.runOnMainSync { assertTrue("Touching status must not stop recording", context.dictation.audio.isRecording) }
+        SystemClock.sleep(1200)
+        instrumentation.runOnMainSync {
+            context.dictation.press(DictationSession.Input.BUTTON)
+            context.dictation.release(DictationSession.Input.BUTTON)
+        }
+        waitFor { !context.dictation.audio.isRecording }
+        waitForIdle(service)
+
+        // Cancelling a physical hold keeps the clip and never uploads it.
+        instrumentation.runOnMainSync { context.dictation.press(DictationSession.Input.BUTTON) }
+        waitFor { context.dictation.heldBy == DictationSession.Input.BUTTON }
+        SystemClock.sleep(1500)
+        instrumentation.runOnMainSync { context.dictation.cancelPress(DictationSession.Input.BUTTON) }
+        waitFor { !context.dictation.audio.isRecording }
+        instrumentation.runOnMainSync {
+            assertTrue(context.dictation.audio.hasRecording)
+            assertNull(context.dictation.transcription.error)
+        }
+        waitForIdle(service)
     }
 
     private fun nativeChecks(service: DictationAccessibilityService) {
@@ -156,7 +154,7 @@ class ChromeInsertionTest {
         }
         open("message")
         waitFor { service.inputMethod?.currentInputEditorInfo?.packageName == "dev.backbutton.test" && text(service) == "Meet me at noon." }
-        waitForControl(service) // This app was never in the old LINE/browser allowlist.
+        waitForIdle(service) // Idle editors have no on-screen recording control.
         instrumentation.runOnMainSync { service.inputMethod!!.currentInputConnection!!.setSelection(8, 8) }
         waitFor { service.inputMethod?.currentInputConnection?.getSurroundingText(2048, 2048, 0)?.selectionStart == 8 }
         lateinit var original: Any
@@ -168,7 +166,7 @@ class ChromeInsertionTest {
 
         open("other")
         waitFor { text(service) == "Other field" }
-        waitForControl(service)
+        waitForIdle(service)
         instrumentation.runOnMainSync {
             insert(service, original, "must not appear")
             assertEquals("Other field", text(service))
@@ -178,6 +176,143 @@ class ChromeInsertionTest {
             waitFor { service.inputMethod?.currentInputEditorInfo?.fieldId == if (field == "password") 3 else 4 }
             instrumentation.runOnMainSync { assertNull("$field fields must not be captured", target(service)) }
             waitFor { service.javaClass.getDeclaredField("pill").apply { isAccessible = true }.get(service) == null }
+        }
+    }
+
+    private fun capture(name: String) {
+        val bitmap = automation.takeScreenshot()
+        assertNotNull(bitmap)
+        File(context.filesDir, name).outputStream().use {
+            bitmap!!.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+        }
+        bitmap!!.recycle()
+    }
+
+    @Test fun nativeStatusIsPassiveAnchoredAndHiddenWhileIdle() {
+        assertEquals("Pass -e nativeFixture true on an emulator or dedicated test device",
+            "true", InstrumentationRegistry.getArguments().getString("nativeFixture"))
+        val keyFile = File(context.filesDir, "fish-audio-key")
+        assertFalse("Never run this test on a device with a Fish key", keyFile.exists())
+        // Recovery survives dismissal and a failed/new recording.
+        val saved = File(context.filesDir, "latest-transcript.txt")
+        saved.writeText("A saved transcript for the recovery check.")
+        instrumentation.runOnMainSync {
+            val transcription = TranscriptionSession(context)
+            assertTrue(transcription.saveApiKey("fixture-key-never-used"))
+            assertTrue(transcription.hasApiKey)
+            keyFile.delete()
+            transcription.refreshKeyStatus()
+            assertFalse(transcription.hasApiKey)
+            transcription.dismissTranscript()
+            val restored = TranscriptionSession(context)
+            assertTrue(restored.transcriptDismissed)
+            assertEquals("A saved transcript for the recovery check.", restored.transcript)
+            restored.revealTranscript()
+            restored.prepareRecording()
+            assertFalse(restored.transcriptDismissed)
+            assertEquals("A saved transcript for the recovery check.", saved.readText())
+        }
+        automation.grantRuntimePermission(context.packageName, Manifest.permission.RECORD_AUDIO)
+        val activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        val enabled = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
+        assertTrue("Enable the service on the dedicated fixture device first", enabled.contains("DictationAccessibilityService"))
+        automation.adoptShellPermissionIdentity(Manifest.permission.WRITE_SECURE_SETTINGS)
+        try {
+            Settings.Secure.putString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+                enabled.split(':').filterNot { it.contains("DictationAccessibilityService") }.joinToString(":"))
+            SystemClock.sleep(200)
+            Settings.Secure.putString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, enabled)
+        } finally { automation.dropShellPermissionIdentity() }
+        waitFor { DictationAccessibilityService.current != null }
+        instrumentation.runOnMainSync { DictationService.enable(activity) }
+        waitFor { context.dictation.crossAppEnabled }
+        val service = DictationAccessibilityService.current!!
+        try {
+            // A physical press in settings must not start a hidden recorder.
+            instrumentation.runOnMainSync {
+                context.dictation.press(DictationSession.Input.BUTTON)
+                context.dictation.release(DictationSession.Input.BUTTON)
+                assertFalse(context.dictation.audio.isRecording)
+            }
+            for ((rotation, name) in listOf(UiAutomation.ROTATION_FREEZE_0 to "status-portrait.png",
+                UiAutomation.ROTATION_FREEZE_90 to "status-landscape.png")) {
+                assertTrue(automation.setRotation(rotation))
+                context.startActivity(Intent().setComponent(ComponentName("dev.backbutton.test", NativeEditorActivity::class.java.name))
+                    .putExtra("field", "message").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+                // Rotation can dismiss the IME after an early showSoftInput request.
+                // Reopen it with a real tap after the new native window has settled.
+                SystemClock.sleep(1000)
+                val field = automation.rootInActiveWindow.findAccessibilityNodeInfosByText("Meet me at noon.")
+                    .first { it.className == "android.widget.EditText" }
+                val fieldBounds = android.graphics.Rect()
+                field.getBoundsInScreen(fieldBounds)
+                shell("input tap " + fieldBounds.centerX() + " " + fieldBounds.centerY())
+                waitForIdle(service)
+                waitFor { service.inputMethod?.currentInputEditorInfo?.packageName == "dev.backbutton.test" &&
+                    target(service) != null &&
+                    service.javaClass.getDeclaredMethod("keyboardBounds").apply { isAccessible = true }.invoke(service) != null }
+                SystemClock.sleep(1000) // Let the keyboard animation/input restart settle before the physical click.
+                instrumentation.runOnMainSync {
+                    assertSame("Service changed across rotation", service, DictationAccessibilityService.current)
+                    assertNotNull("Editor stopped across rotation", target(service))
+                    assertNotNull("Keyboard disappeared across rotation",
+                        service.javaClass.getDeclaredMethod("keyboardBounds").apply { isAccessible = true }.invoke(service))
+                    context.dictation.press(DictationSession.Input.BUTTON)
+                    context.dictation.release(DictationSession.Input.BUTTON)
+                    assertTrue("Physical click did not start capture: " + context.dictation.notice, context.dictation.audio.isRecording)
+                }
+                waitFor { context.dictation.audio.isRecording }
+                waitForControl(service)
+                instrumentation.runOnMainSync {
+                    val params = service.javaClass.getDeclaredField("params").apply { isAccessible = true }.get(service)
+                        as WindowManager.LayoutParams
+                    val keyboard = service.javaClass.getDeclaredMethod("keyboardBounds").apply { isAccessible = true }.invoke(service)
+                        as android.graphics.Rect
+                    val density = context.resources.displayMetrics.density
+                    assertTrue(params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0)
+                    assertEquals(keyboard.top - (96 * density).toInt() - params.height, params.y)
+                    assertEquals(keyboard.exactCenterX(), params.x + params.width / 2f, density)
+                }
+                SystemClock.sleep(200) // The overlay must be drawn, not just attached.
+                instrumentation.runOnMainSync {
+                    assertTrue(context.dictation.audio.isRecording)
+                    val view = service.javaClass.getDeclaredField("pill").apply { isAccessible = true }.get(service) as android.view.View
+                    val params = service.javaClass.getDeclaredField("params").apply { isAccessible = true }.get(service)
+                        as WindowManager.LayoutParams
+                    val location = IntArray(2)
+                    view.getLocationOnScreen(location)
+                    assertEquals(params.x, location[0])
+                    assertEquals(params.y, location[1])
+                }
+                capture(name)
+                instrumentation.runOnMainSync { context.dictation.interrupt("Fixture recording cancelled without uploading.") }
+                waitFor { !context.dictation.audio.isRecording }
+                waitForIdle(service)
+            }
+            automation.setRotation(UiAutomation.ROTATION_FREEZE_0)
+            context.startActivity(Intent().setComponent(ComponentName("dev.backbutton.test", NativeEditorActivity::class.java.name))
+                .putExtra("field", "message").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            SystemClock.sleep(1000)
+            val field = automation.rootInActiveWindow.findAccessibilityNodeInfosByText("Meet me at noon.")
+                .first { it.className == "android.widget.EditText" }
+            val fieldBounds = android.graphics.Rect()
+            field.getBoundsInScreen(fieldBounds)
+            shell("input tap " + fieldBounds.centerX() + " " + fieldBounds.centerY())
+            waitFor { text(service) == "Meet me at noon." && target(service) != null &&
+                service.javaClass.getDeclaredMethod("keyboardBounds").apply { isAccessible = true }.invoke(service) != null }
+            SystemClock.sleep(1000)
+            holdChecks(service)
+            nativeChecks(service)
+            instrumentation.runOnMainSync {
+                assertEquals("A saved transcript for the recovery check.", context.dictation.transcription.transcript)
+            }
+        } catch (failure: Throwable) {
+            capture("status-failure.png")
+            throw failure
+        } finally {
+            instrumentation.runOnMainSync { context.dictation.interrupt("Fixture cleanup"); DictationService.disable(context); activity.finish() }
+            automation.setRotation(UiAutomation.ROTATION_UNFREEZE)
         }
     }
 
@@ -192,7 +327,7 @@ class ChromeInsertionTest {
         // Instrumentation force-stops the target process. Rebind only this already-enabled
         // service on the dedicated test device; never enable a service the user has not enabled.
         val enabled = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
-        assertTrue("Enable Back Button dictation in Accessibility first", enabled.split(':').any {
+        assertTrue("Enable tap dictation in Accessibility first", enabled.split(':').any {
             android.content.ComponentName.unflattenFromString(it)?.className == DictationAccessibilityService::class.java.name
         })
         automation.adoptShellPermissionIdentity(Manifest.permission.WRITE_SECURE_SETTINGS)
@@ -232,7 +367,7 @@ class ChromeInsertionTest {
             instrumentation.runOnMainSync { insert(service, oldTarget, "must not appear") }
             instrumentation.runOnMainSync { assertEquals("Other field", text(service)) }
 
-            waitForControl(service)
+            waitForIdle(service)
             instrumentation.runOnMainSync { service.toggle() }
             waitFor { context.dictation.audio.isRecording }
             SystemClock.sleep(1500)
@@ -252,7 +387,7 @@ class ChromeInsertionTest {
 
             tap(124)
             waitFor { text(service) == "Meet me at tomorrow." }
-            waitForControl(service)
+            waitForIdle(service)
             holdChecks(service)
             nativeChecks(service)
         } finally {

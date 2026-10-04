@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.ViewConfiguration
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,7 +19,7 @@ val Context.dictation: DictationSession
 
 /** One owner for the microphone, uploads, and BLE, shared by the screen and service. */
 class DictationSession(context: Context) {
-    enum class Input { CONTROL, BUTTON }
+    enum class Input { BUTTON }
     private val handler = Handler(Looper.getMainLooper())
     private val gestures = Input.entries.associateWith { RecordingGesture() }
     private val holdTimers = mutableMapOf<Input, Runnable>()
@@ -34,6 +35,12 @@ class DictationSession(context: Context) {
     var notice by mutableStateOf<String?>(null)
         internal set
     var activityVisible = false
+    var statusMessage: String? = null
+        private set
+    var statusIsError = false
+        private set
+    var statusUntil = 0L
+        private set
     private var delivery: ((String) -> Unit)? = null
     var recordingInField = false
         private set
@@ -41,10 +48,8 @@ class DictationSession(context: Context) {
         private set
 
     fun press(input: Input) {
-        val enabled = !transcription.isTranscribing && when (input) {
-            Input.CONTROL -> crossAppEnabled && DictationAccessibilityService.current != null
-            Input.BUTTON -> activityVisible || crossAppEnabled && DictationAccessibilityService.current != null
-        }
+        val enabled = !transcription.isTranscribing && crossAppEnabled && DictationAccessibilityService.current != null
+        if (!enabled && activityVisible && !crossAppEnabled) notice = "Enable dictation, then open a text field in another app."
         if (gestures.getValue(input).down(audio.isRecording, enabled)) {
             val timer = Runnable {
                 holdTimers.remove(input)
@@ -55,9 +60,9 @@ class DictationSession(context: Context) {
         }
     }
 
-    fun release(input: Input, tap: (() -> Unit)? = null) {
+    fun release(input: Input) {
         holdTimers.remove(input)?.let { handler.removeCallbacks(it) }
-        handle(input, gestures.getValue(input).release(), tap)
+        handle(input, gestures.getValue(input).release())
     }
 
     fun cancelPress(input: Input) {
@@ -65,16 +70,13 @@ class DictationSession(context: Context) {
         handle(input, gestures.getValue(input).cancel())
     }
 
-    private fun handle(input: Input, action: RecordingGesture.Action, tap: (() -> Unit)? = null) {
+    private fun handle(input: Input, action: RecordingGesture.Action) {
         when (action) {
             RecordingGesture.Action.TAP -> {
-                if (tap != null) tap()
-                else if (activityVisible) toggle()
-                else if (crossAppEnabled) DictationAccessibilityService.current?.toggle()
+                if (crossAppEnabled) DictationAccessibilityService.current?.toggle()
             }
             RecordingGesture.Action.START_HOLD -> {
-                val started = if (input == Input.BUTTON && activityVisible) start(heldBy = input)
-                    else DictationAccessibilityService.current?.start(input) == true
+                val started = DictationAccessibilityService.current?.start(input) == true
                 if (!started) gestures.getValue(input).rejectHold()
             }
             RecordingGesture.Action.FINISH_HOLD -> if (heldBy == input) finish()
@@ -97,9 +99,10 @@ class DictationSession(context: Context) {
     fun start(insert: ((String) -> Unit)? = null, heldBy: Input? = null): Boolean {
         if (transcription.isTranscribing || audio.isRecording) return false
         notice = null
+        statusMessage = null
         audio.startRecording()
         if (!audio.isRecording) return false
-        transcription.clear()
+        transcription.prepareRecording()
         delivery = insert
         recordingInField = insert != null
         this.heldBy = heldBy
@@ -114,20 +117,29 @@ class DictationSession(context: Context) {
         delivery = null
         recordingInField = false
         heldBy = null
-        if (audio.hasRecording) transcription.transcribe(completed)
+        if (audio.hasRecording) transcription.transcribe(completed) {
+            showStatus("Transcription failed", error = true)
+        } else showStatus("Recording too short", error = true)
     }
 
     fun interrupt(reason: String) {
+        val wasRecording = audio.isRecording
         resetGestures()
         delivery = null
         recordingInField = false
         heldBy = null
         if (audio.isRecording) audio.stopRecording(interrupted = true, interruptionMessage = reason)
+        if (wasRecording) showStatus("Recording stopped", error = true)
+    }
+
+    fun showStatus(message: String, error: Boolean = false) {
+        statusMessage = message
+        statusIsError = error
+        statusUntil = SystemClock.elapsedRealtime() + if (error) 3500L else 1200L
     }
 
     fun leaveActivity() {
         cancelPress(Input.BUTTON)
-        cancelPress(Input.CONTROL)
         activityVisible = false
         audio.stopPlayback()
         if (!crossAppEnabled) {

@@ -2,5 +2,8 @@
     <style name="Theme.BackButton" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowBackground">#FCFCFC</item>
+        <item name="android:colorAccent">#222222</item>
     </style>
 </resources>

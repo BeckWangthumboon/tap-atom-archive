@@ -50,6 +50,13 @@ class AudioSession(private val context: Context) {
         message = "Microphone access is needed to record. Try again, or enable it in app settings."
     }
 
+    /** Peak microphone level since the previous sample, only while capture is active. */
+    fun peakLevel(): Float {
+        if (!isRecording) return 0f
+        val amplitude = runCatching { recorder?.maxAmplitude ?: 0 }.getOrDefault(0)
+        return kotlin.math.sqrt(amplitude.coerceIn(0, 32767) / 32767f)
+    }
+
     fun startRecording() {
         if (isRecording) return
         stopPlayback()

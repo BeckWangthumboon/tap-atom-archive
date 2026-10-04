@@ -1,4 +1,4 @@
 <resources>
-    <string name="accessibility_description">Shows a compact dictation control above your keyboard in other apps and inserts transcripts into compatible text fields. Password fields are excluded. Checks field text and selection locally to preserve existing text. Tap to toggle recording, or hold until the vibration and release to finish. Move during a hold to cancel. Your connected button supports clicks and holds too.</string>
-    <string name="app_name">Back Button</string>
+    <string name="accessibility_description">Shows a small status indicator above your keyboard while dictating with your physical button, and inserts transcripts into compatible text fields. The indicator does not accept taps. Password and PIN fields are excluded. Checks field text and selection locally to preserve existing text. Click your physical button to start and stop, or hold until the vibration and release to finish.</string>
+    <string name="app_name">tap</string>
 </resources>

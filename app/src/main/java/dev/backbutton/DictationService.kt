@@ -58,7 +58,7 @@ class DictationService : Service() {
         val notification = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_mic_notification)
             .setContentTitle("Dictation ready")
-            .setContentText("Tap Record above your keyboard or press the ATOM.")
+            .setContentText("Press your physical button to dictate into a text field.")
             .setContentIntent(open)
             .setOngoing(true)
             .addAction(Notification.Action.Builder(null, "Turn off", stop).build())
@@ -71,7 +71,7 @@ class DictationService : Service() {
             dictation.notice = null
             dictation.button.resume()
         } catch (_: SecurityException) {
-            dictation.notice = "Open Back Button and enable cross-app dictation again."
+            dictation.notice = "Open tap and enable cross-app dictation again."
             stopSelf()
         }
         // A killed service must be enabled again from a visible screen, never restarted into capture.

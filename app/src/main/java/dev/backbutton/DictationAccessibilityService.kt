@@ -4,23 +4,19 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.InputMethod
 import android.annotation.SuppressLint
 import android.app.KeyguardManager
-import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Rect
-import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.Gravity
-import android.view.MotionEvent
-import android.view.ViewConfiguration
 import android.view.WindowManager
+import android.view.WindowInsets
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
-import android.widget.TextView
 import android.view.inputmethod.EditorInfo
 import android.widget.Toast
-import kotlin.math.abs
 import java.lang.ref.WeakReference
 
 class DictationAccessibilityService : AccessibilityService() {
@@ -33,22 +29,14 @@ class DictationAccessibilityService : AccessibilityService() {
     private var editorGeneration = 0L
     private val handler = Handler(Looper.getMainLooper())
     private val manager by lazy { getSystemService(WindowManager::class.java) }
-    private val position by lazy { getSharedPreferences("dictation-control", MODE_PRIVATE) }
-    private var pill: TextView? = null
+    private var pill: DictationStatusView? = null
     private var params: WindowManager.LayoutParams? = null
     private var captured: Target? = null
-    private var drag = false
-    private var touchCancelled = false
-    private var downX = 0f
-    private var downY = 0f
-    private var originX = 0
-    private var originY = 0
-    private var keyboardTop: Int? = null
     private var insertionInProgress = false
     private val refresh = object : Runnable {
         override fun run() {
             update()
-            handler.postDelayed(this, 250)
+            handler.postDelayed(this, if (dictation.audio.isRecording || dictation.transcription.isTranscribing) 80L else 250L)
         }
     }
 
@@ -60,7 +48,8 @@ class DictationAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         // Window changes from every app are needed to dismiss the control on app switches.
-        // Editor context is read locally only when recording starts and when a result arrives.
+        // Text is read locally when recording starts and when a result arrives;
+        // focused field bounds also keep the active indicator clear of growing composers.
         update()
     }
 
@@ -138,18 +127,18 @@ class DictationAccessibilityService : AccessibilityService() {
         }
         val target = snapshot()
         if (target == null) {
-            tell("This field does not expose its cursor. Use dictation in Back Button and copy the result.")
+            tell("This field does not expose its cursor. Try a standard text field.", "Field unavailable")
             return false
         }
         captured = target
         val started = dictation.start(insert = { result ->
             runCatching { insert(target, result) }.onFailure {
-                tell("Could not insert here. Your transcript is saved in Back Button.")
+                tell("Could not insert here. Your transcript is saved in tap.", "Transcript saved")
             }
         }, heldBy = heldBy)
         if (!started) {
             cancelTarget()
-            tell(dictation.audio.message ?: "Could not start recording. Open Back Button and enable dictation again.")
+            tell(dictation.audio.message ?: "Could not start recording. Open tap and enable dictation again.")
         }
         update()
         return started
@@ -162,7 +151,7 @@ class DictationAccessibilityService : AccessibilityService() {
         if (!dictation.crossAppEnabled || !target.valid || latest == null || target.generation != latest.generation ||
             target.offset != latest.offset || !TextInsertion.unchanged(target.text, target.start, target.end,
                 latest.text, latest.start, latest.end)) {
-            tell("Field changed. Your transcript is saved in Back Button; copy it from there.")
+            tell("Field changed. Your transcript is saved in tap; copy it from there.", "Transcript saved")
             return
         }
         val inserted = TextInsertion.replacement(target.text, target.start, target.end, result) ?: return
@@ -171,7 +160,8 @@ class DictationAccessibilityService : AccessibilityService() {
             // The accessibility input connection finishes existing IME composition, then commits
             // only the replacement at the selection. It never resets the entire field's text.
             inputMethod?.currentInputConnection?.commitText(inserted, 1, null)
-            dictation.notice = "Transcript inserted."
+            dictation.notice = null
+            dictation.showStatus("Inserted")
         } finally {
             insertionInProgress = false
             update()
@@ -182,13 +172,23 @@ class DictationAccessibilityService : AccessibilityService() {
         it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD
     }?.let { Rect().apply { it.getBoundsInScreen(this) } }?.takeIf { it.height() > dp(80) }
 
+    private fun composerBounds(keyboard: Rect): OverlayBounds? {
+        val editor = findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return null
+        if (!editor.isEditable || !editor.isVisibleToUser ||
+            editor.packageName?.toString() != inputMethod?.currentInputEditorInfo?.packageName) return null
+        val bounds = Rect().apply { editor.getBoundsInScreen(this) }
+        // Only follow a compact editor beside the keyboard, not a full-page note or search field.
+        if (bounds.isEmpty || bounds.height() > dp(280) ||
+            kotlin.math.abs(bounds.bottom - keyboard.top) > dp(48)) return null
+        return OverlayBounds(bounds.left, bounds.top, bounds.right, bounds.bottom)
+    }
+
     fun cancelTarget() {
         captured?.valid = false
         captured = null
     }
 
     private fun cancelPresses() {
-        dictation.cancelPress(DictationSession.Input.CONTROL)
         dictation.cancelPress(DictationSession.Input.BUTTON)
     }
 
@@ -212,135 +212,80 @@ class DictationAccessibilityService : AccessibilityService() {
             tell("Recording stopped because the text field changed. The clip is saved without uploading.")
         }
         val keyboard = keyboardBounds()
-        val active = dictation.recordingInField || dictation.transcription.isTranscribing && captured?.valid == true
         if (!dictation.audio.isRecording && !dictation.transcription.isTranscribing) captured = null
-        if (!active && (!eligible || keyboard == null)) { removePill(); return }
-        showPill(keyboard?.top)
+        if (!eligible || keyboard == null) { removePill(); return }
+        val mode: DictationStatusView.Mode
+        val label: String
+        when {
+            dictation.recordingInField && dictation.audio.isRecording -> {
+                mode = DictationStatusView.Mode.RECORDING
+                label = "Recording"
+            }
+            dictation.transcription.isTranscribing && captured?.valid == true -> {
+                mode = DictationStatusView.Mode.TRANSCRIBING
+                label = "Transcribing…"
+            }
+            dictation.statusMessage != null && SystemClock.elapsedRealtime() < dictation.statusUntil -> {
+                mode = if (dictation.statusIsError) DictationStatusView.Mode.ERROR else DictationStatusView.Mode.SUCCESS
+                label = dictation.statusMessage!!
+            }
+            else -> { removePill(); return }
+        }
+        showPill(keyboard, mode, label)
     }
 
-    @SuppressLint("RtlHardcoded") // Accessibility bounds and drag coordinates are absolute screen coordinates.
-    private fun showPill(top: Int?) {
-        val bounds = manager.currentWindowMetrics.bounds
-        val width = dp(112)
-        val height = dp(40)
-        if (pill == null) {
-            val control = TextView(this).apply {
-                gravity = Gravity.CENTER
-                textSize = 13f
-                setTextColor(Color.WHITE)
-                elevation = dp(3).toFloat()
-                importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_YES
-                isClickable = true
-                setOnClickListener { toggle() }
-                setOnTouchListener { view, event ->
-                    val layout = params ?: return@setOnTouchListener false
-                    when (event.actionMasked) {
-                        MotionEvent.ACTION_DOWN -> {
-                            downX = event.rawX; downY = event.rawY
-                            originX = layout.x; originY = layout.y; drag = false; touchCancelled = false
-                            dictation.press(DictationSession.Input.CONTROL)
-                            true
-                        }
-                        MotionEvent.ACTION_MOVE -> {
-                            if (touchCancelled) return@setOnTouchListener true
-                            val dx = event.rawX - downX; val dy = event.rawY - downY
-                            if (!drag && abs(dx) + abs(dy) > ViewConfiguration.get(this@DictationAccessibilityService).scaledTouchSlop) {
-                                val holding = dictation.heldBy == DictationSession.Input.CONTROL
-                                dictation.cancelPress(DictationSession.Input.CONTROL)
-                                if (holding) {
-                                    touchCancelled = true
-                                    update()
-                                    return@setOnTouchListener true
-                                }
-                                drag = true
-                            }
-                            if (drag) {
-                                layout.x = (originX + dx.toInt()).coerceIn(dp(4), (bounds.width() - width - dp(4)).coerceAtLeast(dp(4)))
-                                layout.y = (originY + dy.toInt()).coerceIn(dp(32), (bounds.height() - height - dp(40)).coerceAtLeast(dp(32)))
-                                runCatching { manager.updateViewLayout(view, layout) }
-                            }
-                            true
-                        }
-                        MotionEvent.ACTION_UP -> {
-                            if (drag) position.edit().putFloat("horizontal", layout.x.toFloat() / bounds.width())
-                                .putInt("above-keyboard", (keyboardTop ?: bounds.height() - dp(40)) - layout.y - height).apply()
-                            else if (!touchCancelled) dictation.release(DictationSession.Input.CONTROL) { view.performClick() }
-                            drag = false
-                            touchCancelled = false
-                            update()
-                            true
-                        }
-                        MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_DOWN -> {
-                            dictation.cancelPress(DictationSession.Input.CONTROL)
-                            drag = false
-                            touchCancelled = true
-                            update()
-                            true
-                        }
-                        else -> false
-                    }
-                }
-            }
-            val layout = WindowManager.LayoutParams(width, height, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+    @SuppressLint("RtlHardcoded") // Keyboard bounds and overlay placement use absolute screen coordinates.
+    private fun showPill(keyboard: Rect, mode: DictationStatusView.Mode, label: String) {
+        val metrics = manager.currentWindowMetrics
+        val bounds = metrics.bounds
+        val safe = metrics.windowInsets.getInsetsIgnoringVisibility(
+            WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout(),
+        )
+        val view = pill ?: DictationStatusView(this)
+        val width = view.desiredWidth(mode, label).coerceAtMost(bounds.width() - dp(16))
+        val height = dp(30)
+        val placement = StatusPlacement.aboveKeyboard(
+            OverlayBounds(bounds.left + safe.left, bounds.top + safe.top,
+                bounds.right - safe.right, bounds.bottom - safe.bottom),
+            OverlayBounds(keyboard.left, keyboard.top, keyboard.right, keyboard.bottom),
+            // Leave room for the app's message composer above the keyboard.
+            width, height, dp(96), dp(8),
+            composer = composerBounds(keyboard), composerGap = dp(12),
+        ) ?: run { removePill(); return }
+        val layout = params
+        view.update(mode, label, if (mode == DictationStatusView.Mode.RECORDING) dictation.audio.peakLevel() else 0f)
+        if (layout == null) {
+            val next = WindowManager.LayoutParams(width, height, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT).apply {
                 gravity = Gravity.TOP or Gravity.LEFT
-                x = (position.getFloat("horizontal", 0.5f) * bounds.width() - if (position.contains("horizontal")) 0 else width / 2).toInt()
+                x = placement.x
+                y = placement.y
             }
-            params = layout
-            pill = control
-            keyboardTop = null
-            place(top, bounds, width, height)
-            try { manager.addView(control, layout) }
-            catch (_: WindowManager.BadTokenException) { pill = null; params = null; return }
-        }
-        if (!drag) place(top, bounds, width, height)
-        val control = pill ?: return
-        val recording = dictation.recordingInField
-        val processing = dictation.transcription.isTranscribing && captured != null
-        val label = when {
-            recording && dictation.heldBy == DictationSession.Input.CONTROL -> "Release ${((SystemClock.elapsedRealtime() - dictation.audio.startedAt) / 1000)}s"
-            recording -> "■ Stop ${((SystemClock.elapsedRealtime() - dictation.audio.startedAt) / 1000)}s"
-            processing -> "Working…"
-            else -> "● Record"
-        }
-        if (control.text.toString() != label) {
-            control.text = label
-            control.contentDescription = if (recording && dictation.heldBy == DictationSession.Input.CONTROL) "Release to finish dictation. Move to cancel."
-                else if (recording) "Stop dictation" else if (processing) "Transcribing recording"
-                else "Start dictation. Hold to record until release. Drag to move."
-            control.background = GradientDrawable().apply {
-                cornerRadius = dp(20).toFloat()
-                setColor(if (recording) Color.rgb(169, 35, 51) else Color.rgb(43, 46, 60))
-            }
-        }
-        control.isEnabled = !processing
-        runCatching { manager.updateViewLayout(control, params) }
-    }
-
-    private fun place(top: Int?, screen: Rect, width: Int, height: Int) {
-        val layout = params ?: return
-        layout.x = layout.x.coerceIn(dp(4), (screen.width() - width - dp(4)).coerceAtLeast(dp(4)))
-        if (keyboardTop != top || pill?.isAttachedToWindow != true) {
-            keyboardTop = top
-            val edge = top ?: screen.height() - dp(40)
-            layout.y = (edge - height - position.getInt("above-keyboard", dp(4)))
-                .coerceIn(dp(32), (screen.height() - height - dp(40)).coerceAtLeast(dp(32)))
+            try {
+                manager.addView(view, next)
+                pill = view
+                params = next
+            } catch (_: WindowManager.BadTokenException) { pill = null; params = null }
+        } else if (layout.x != placement.x || layout.y != placement.y || layout.width != width || layout.height != height) {
+            layout.x = placement.x
+            layout.y = placement.y
+            layout.width = width
+            layout.height = height
+            runCatching { manager.updateViewLayout(view, layout) }
         }
     }
 
     private fun removePill() {
-        dictation.cancelPress(DictationSession.Input.CONTROL)
         pill?.let { runCatching { manager.removeView(it) } }
         pill = null
         params = null
-        keyboardTop = null
-        drag = false
     }
 
-    private fun tell(message: String) {
+    private fun tell(message: String, status: String = message) {
         dictation.notice = message
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        dictation.showStatus(status, error = true)
+        if (!eligibleEditor() || keyboardBounds() == null) Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()

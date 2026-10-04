@@ -21,7 +21,7 @@
         <service android:name=".DictationService" android:exported="false"
             android:foregroundServiceType="microphone|connectedDevice" />
         <service android:name=".DictationAccessibilityService" android:exported="true"
-            android:label="Back Button dictation"
+            android:label="tap dictation"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
