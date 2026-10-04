@@ -10,7 +10,7 @@ Press the rear physical button once to start recording, feel a vibration when th
 
 | Area | Decision |
 | --- | --- |
-| Project name | Tap, chosen by the user. Folder paths, Git repository, Android package/app label, and firmware identifiers remain under their existing names for now; rename them in a later step. |
+| Project name | Tap, chosen by the user. The local folder is now `/Users/beck/projects/tap`. The GitHub repository, Android package/app label, and firmware identifiers retain their existing names pending later rename steps. |
 | Platform | Android first; native Kotlin app with Jetpack Compose for the small setup/status UI. |
 | Development host | MacBook initially; eventually explore a VM with remote hardware access. |
 | Cross-app integration | Use Android 13+ accessibility input connections for insertion, retaining the existing keyboard and a compact accessibility overlay. |
@@ -81,6 +81,8 @@ Following successful Samsung hold-to-talk testing, the user requested app-wide s
 App-wide verification: build and lint pass, along with 28 JVM tests. The extended API 37 integration test passes in Chrome and a separate native Android editor app that was never in the allowlist. It verifies native insertion preserving existing text, rejection of a stale result after switching fields, and hiding the control and rejecting capture for native password and PIN inputs. Existing browser insertion and hold/cancellation checks also pass. The test fixture is only in the separate test APK; the emulator has no Fish key and does not upload recordings. The production update is installed on the Samsung; its Fish key and accessibility access were retained. Cross-app dictation is off after the update and must be enabled again from Back Button. Broader everyday app coverage on the Samsung remains a user check.
 
 The home-screen UI cleanup brings recording and the latest transcript ahead of physical-button controls, reduces the readiness and connection cards, and moves longer instructions and event counters into an expandable Setup & help section. Existing recording, playback, retry, deletion, copy, and connection actions are retained. The header reads the app-name resource so a future display-name change has a single source. The user has chosen Tap as the project name; the app still displays Back Button until the later rename step. Build, lint, and all 28 JVM tests pass. The home screen and sample-transcript layout were visually checked on an emulator at normal and 1.3× text size, including expanded help. The UI update is installed on the Samsung; cross-app dictation must be enabled again after the update.
+
+On 2026-10-04, the local project folder was renamed from `/Users/beck/projects/back-button` to `/Users/beck/projects/tap`. A compatibility symlink at the old path points to `tap`, preserving this active T3/Codex thread’s file access. T3’s existing project ID and thread were retained, and its stored workspace path still uses the old alias. Updating that saved path to `tap` and removing the alias remain pending; the current T3 computer controls did not reliably allow a path edit. The Git repository and working files are intact at the new location.
 
 ## Milestones
 
