@@ -261,8 +261,8 @@ private fun SettingsScreen(
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Allow text insertion and microphone access, add your Fish Audio API key, then select Can dictate in other apps → Enable.")
-                Text("Connect your physical button. Open a text field with the keyboard visible. Click to start, then click to stop. Or hold until the vibration, speak, and release.")
-                Text("The slim indicator shows recording and transcription status. It does not accept taps.")
+                Text("Connect your physical button. Click to start, then click to stop, or hold until the vibration and release to finish. You can record without selecting a field. If a compatible field stays unchanged, text is inserted there; otherwise use × and Copy.")
+                Text("The waveform shows recording and processing. Red signals an error; details appear in settings. If text could not be inserted, use the small Copy icon or close the floating result with ×.")
                 Text("Password and PIN fields are excluded. If insertion fails, copy your last transcript here.")
                 Text("Audio is sent to Fish Audio when you finish recording. The microphone stays off until you press the physical button. Enable dictation again after the app restarts.")
                 TextButton(onClick = openAppSettings) { Text("Android app settings") }

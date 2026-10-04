@@ -5,6 +5,13 @@ data class OverlayBounds(val left: Int, val top: Int, val right: Int, val bottom
 data class OverlayPosition(val x: Int, val y: Int)
 
 object StatusPlacement {
+    fun atScreenEdge(screen: OverlayBounds, width: Int, height: Int, margin: Int, atTop: Boolean): OverlayPosition? {
+        if (width <= 0 || height <= 0 || screen.right - screen.left < width + margin * 2 ||
+            screen.bottom - screen.top < height + margin * 2) return null
+        return OverlayPosition(screen.left + (screen.right - screen.left - width) / 2,
+            if (atTop) screen.top + margin else screen.bottom - margin - height)
+    }
+
     fun aboveKeyboard(
         screen: OverlayBounds,
         keyboard: OverlayBounds,

@@ -5,6 +5,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class EditorEligibilityTest {
+    @Test fun standaloneRecordingDistinguishesNoEditorFromSensitiveEditor() {
+        assertFalse(EditorEligibility.isSensitive(TYPE_NULL))
+        assertFalse(EditorEligibility.isSensitive(TYPE_CLASS_TEXT or TYPE_TEXT_FLAG_MULTI_LINE))
+        assertTrue(EditorEligibility.isSensitive(TYPE_CLASS_TEXT or TYPE_TEXT_VARIATION_WEB_PASSWORD))
+        assertTrue(EditorEligibility.isSensitive(TYPE_CLASS_NUMBER or TYPE_NUMBER_VARIATION_PASSWORD))
+    }
     private fun accepts(type: Int, app: String? = "any.notes.app") =
         EditorEligibility.accepts(app, "dev.backbutton", type)
 

@@ -50,6 +50,12 @@ public class NativeEditorActivity extends Activity {
     @Override public void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if (intent.getBooleanExtra("reset", false)) {
+            fields.get("message").setText("Meet me at noon.");
+            fields.get("other").setText("Other field");
+            fields.get("password").setText("");
+            fields.get("pin").setText("");
+        }
         focus(intent);
     }
 

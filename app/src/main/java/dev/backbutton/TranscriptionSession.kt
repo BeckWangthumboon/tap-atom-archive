@@ -1,6 +1,7 @@
 package dev.backbutton
 
 import android.content.Context
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -79,9 +80,11 @@ class TranscriptionSession(context: Context) {
         }
         error = null
         isTranscribing = true
+        Log.i("TapDictation", "Processing started")
         scope.launch {
             try {
                 val result = client.transcribe(recordingFile, key)
+                Log.i("TapDictation", "Processing completed: speechDetected=${result.isNotBlank()}")
                 if (result.isNotBlank()) {
                     transcriptFile.writeText(result)
                     transcript = result
@@ -103,6 +106,7 @@ class TranscriptionSession(context: Context) {
                 }
             } finally {
                 isTranscribing = false
+                if (error != null) Log.i("TapDictation", "Processing failed")
                 error?.let { onError?.invoke(it) }
             }
         }

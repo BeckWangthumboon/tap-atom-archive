@@ -4,6 +4,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StatusPlacementTest {
+    @Test fun noKeyboardFloatsAboveNavigationAndHandlesSplitScreen() {
+        assertEquals(OverlayPosition(152, 846), StatusPlacement.atScreenEdge(
+            OverlayBounds(0, 0, 400, 900), 96, 30, 24, atTop = false))
+        assertEquals(OverlayPosition(752, 534), StatusPlacement.atScreenEdge(
+            OverlayBounds(600, 100, 1000, 600), 96, 42, 24, atTop = false))
+    }
+
+    @Test fun tightLandscapeUsesTopEdgeAndTinyWindowsAreRejected() {
+        assertEquals(OverlayPosition(352, 44), StatusPlacement.atScreenEdge(
+            OverlayBounds(0, 20, 800, 400), 96, 30, 24, atTop = true))
+        assertNull(StatusPlacement.atScreenEdge(OverlayBounds(0, 0, 130, 100), 96, 30, 24, atTop = false))
+    }
     @Test fun portraitTracksKeyboardHeight() {
         val screen = OverlayBounds(0, 0, 1080, 2340)
         assertEquals(OverlayPosition(405, 1434),

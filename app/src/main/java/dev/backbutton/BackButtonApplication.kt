@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import android.view.ViewConfiguration
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,7 +38,7 @@ class DictationSession(context: Context) {
     var activityVisible = false
     var statusMessage: String? = null
         private set
-    var statusIsError = false
+    var recoveryTranscript: String? = null
         private set
     var statusUntil = 0L
         private set
@@ -49,7 +50,7 @@ class DictationSession(context: Context) {
 
     fun press(input: Input) {
         val enabled = !transcription.isTranscribing && crossAppEnabled && DictationAccessibilityService.current != null
-        if (!enabled && activityVisible && !crossAppEnabled) notice = "Enable dictation, then open a text field in another app."
+        if (!enabled && activityVisible && !crossAppEnabled) notice = "Enable dictation to use your physical button."
         if (gestures.getValue(input).down(audio.isRecording, enabled)) {
             val timer = Runnable {
                 holdTimers.remove(input)
@@ -100,6 +101,7 @@ class DictationSession(context: Context) {
         if (transcription.isTranscribing || audio.isRecording) return false
         notice = null
         statusMessage = null
+        recoveryTranscript = null
         audio.startRecording()
         if (!audio.isRecording) return false
         transcription.prepareRecording()
@@ -117,36 +119,47 @@ class DictationSession(context: Context) {
         delivery = null
         recordingInField = false
         heldBy = null
-        if (audio.hasRecording) transcription.transcribe(completed) {
-            showStatus("Transcription failed", error = true)
-        } else showStatus("Recording too short", error = true)
+        Log.i("TapDictation", "Capture finished: clipSaved=${audio.hasRecording}")
+        if (audio.hasRecording) transcription.transcribe(completed) { reason ->
+            showError(reason)
+        } else showError(audio.message ?: "Could not save this recording. Try recording again.")
     }
 
     fun interrupt(reason: String) {
         val wasRecording = audio.isRecording
+        if (wasRecording) Log.i("TapDictation", "Capture interrupted: $reason")
         resetGestures()
         delivery = null
         recordingInField = false
         heldBy = null
         if (audio.isRecording) audio.stopRecording(interrupted = true, interruptionMessage = reason)
-        if (wasRecording) showStatus("Recording stopped", error = true)
+        if (wasRecording) showError(reason)
     }
 
-    fun showStatus(message: String, error: Boolean = false) {
+    fun showError(message: String) {
+        notice = message
         statusMessage = message
-        statusIsError = error
-        statusUntil = SystemClock.elapsedRealtime() + if (error) 3500L else 1200L
+        recoveryTranscript = null
+        statusUntil = SystemClock.elapsedRealtime() + 3500L
+    }
+
+    fun showRecovery(text: String, reason: String) {
+        notice = reason
+        statusMessage = null
+        recoveryTranscript = text
+    }
+
+    fun dismissRecovery() {
+        recoveryTranscript = null
     }
 
     fun leaveActivity() {
-        cancelPress(Input.BUTTON)
         activityVisible = false
         audio.stopPlayback()
         if (!crossAppEnabled) {
+            cancelPress(Input.BUTTON)
             interrupt("Recording stopped because you left the app.")
             button.pause()
-        } else if (audio.isRecording && !recordingInField) {
-            interrupt("Recording stopped because you left the app.")
         }
     }
 }

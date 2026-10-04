@@ -4,19 +4,22 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.InputMethod
 import android.annotation.SuppressLint
 import android.app.KeyguardManager
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import android.view.Gravity
+import android.view.View
 import android.view.WindowManager
 import android.view.WindowInsets
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import android.view.inputmethod.EditorInfo
-import android.widget.Toast
 import java.lang.ref.WeakReference
 
 class DictationAccessibilityService : AccessibilityService() {
@@ -29,7 +32,7 @@ class DictationAccessibilityService : AccessibilityService() {
     private var editorGeneration = 0L
     private val handler = Handler(Looper.getMainLooper())
     private val manager by lazy { getSystemService(WindowManager::class.java) }
-    private var pill: DictationStatusView? = null
+    private var pill: View? = null
     private var params: WindowManager.LayoutParams? = null
     private var captured: Target? = null
     private var insertionInProgress = false
@@ -47,7 +50,7 @@ class DictationAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Window changes from every app are needed to dismiss the control on app switches.
+        // Window changes invalidate insertion targets; microphone capture follows the button.
         // Text is read locally when recording starts and when a result arrives;
         // focused field bounds also keep the active indicator clear of growing composers.
         update()
@@ -73,6 +76,9 @@ class DictationAccessibilityService : AccessibilityService() {
     override fun onCreateInputMethod(): InputMethod = object : InputMethod(this) {
         override fun onStartInput(attribute: EditorInfo, restarting: Boolean) {
             editorChanged()
+            if (EditorEligibility.isSensitive(attribute.inputType) && dictation.audio.isRecording) {
+                dictation.interrupt("Recording stopped because a password or PIN field was selected.")
+            }
         }
 
         override fun onFinishInput() {
@@ -86,10 +92,9 @@ class DictationAccessibilityService : AccessibilityService() {
     }
 
     private fun editorChanged() {
-        cancelPresses()
         editorGeneration++
         cancelTarget()
-        if (dictation.recordingInField) dictation.interrupt("Recording stopped because the text field changed.")
+        Log.i("TapDictation", "Input changed; insertion target invalidated; recording=${dictation.audio.isRecording}")
         handler.post { update() }
     }
 
@@ -99,6 +104,13 @@ class DictationAccessibilityService : AccessibilityService() {
         val info = method.currentInputEditorInfo ?: return false
         if (!method.currentInputStarted || method.currentInputConnection == null) return false
         return EditorEligibility.accepts(info.packageName, packageName, info.inputType)
+    }
+
+    private fun sensitiveEditor(): Boolean {
+        val method = inputMethod ?: return false
+        return method.currentInputStarted && method.currentInputEditorInfo?.let {
+            EditorEligibility.isSensitive(it.inputType)
+        } == true
     }
 
     private fun snapshot(): Target? {
@@ -121,21 +133,20 @@ class DictationAccessibilityService : AccessibilityService() {
 
     fun start(heldBy: DictationSession.Input? = null): Boolean {
         if (!dictation.crossAppEnabled || dictation.transcription.isTranscribing || dictation.audio.isRecording) return false
-        if (!eligibleEditor() || keyboardBounds() == null) {
-            tell("Tap a text field and open the keyboard first.")
+        if (getSystemService(KeyguardManager::class.java).isDeviceLocked || sensitiveEditor()) {
+            tell("Unlock your phone and leave password or PIN fields before recording.")
             return false
         }
-        val target = snapshot()
-        if (target == null) {
-            tell("This field does not expose its cursor. Try a standard text field.", "Field unavailable")
-            return false
-        }
+        val target = if (keyboardBounds() != null) snapshot() else null
         captured = target
         val started = dictation.start(insert = { result ->
-            runCatching { insert(target, result) }.onFailure {
-                tell("Could not insert here. Your transcript is saved in tap.", "Transcript saved")
+            if (result.isBlank()) tell("No speech detected.")
+            else if (target == null) recover(result, "Transcript ready to copy. No input field was selected when recording started.")
+            else runCatching { insert(target, result) }.onFailure {
+                recover(result, "Could not insert here. Copy your saved transcript or find it in tap settings.")
             }
         }, heldBy = heldBy)
+        Log.i("TapDictation", "Capture start: started=$started insertionTarget=${target != null} held=${heldBy != null}")
         if (!started) {
             cancelTarget()
             tell(dictation.audio.message ?: "Could not start recording. Open tap and enable dictation again.")
@@ -151,17 +162,18 @@ class DictationAccessibilityService : AccessibilityService() {
         if (!dictation.crossAppEnabled || !target.valid || latest == null || target.generation != latest.generation ||
             target.offset != latest.offset || !TextInsertion.unchanged(target.text, target.start, target.end,
                 latest.text, latest.start, latest.end)) {
-            tell("Field changed. Your transcript is saved in tap; copy it from there.", "Transcript saved")
+            recover(result, "Field changed. Copy your saved transcript or find it in tap settings.")
             return
         }
-        val inserted = TextInsertion.replacement(target.text, target.start, target.end, result) ?: return
+        val inserted = TextInsertion.replacement(target.text, target.start, target.end, result)
+            ?: run { recover(result, "Could not insert here. Your transcript is saved in tap."); return }
         insertionInProgress = true
         try {
             // The accessibility input connection finishes existing IME composition, then commits
             // only the replacement at the selection. It never resets the entire field's text.
             inputMethod?.currentInputConnection?.commitText(inserted, 1, null)
             dictation.notice = null
-            dictation.showStatus("Inserted")
+            Log.i("TapDictation", "Result inserted")
         } finally {
             insertionInProgress = false
             update()
@@ -195,39 +207,43 @@ class DictationAccessibilityService : AccessibilityService() {
     private fun update() {
         if (insertionInProgress) return
         if (!dictation.crossAppEnabled || getSystemService(KeyguardManager::class.java).isDeviceLocked) {
-            if (dictation.recordingInField) dictation.interrupt("Recording stopped because dictation became unavailable.")
+            if (dictation.audio.isRecording) dictation.interrupt("Recording stopped because dictation became unavailable.")
             cancelTarget()
             removePill()
             return
         }
         val eligible = eligibleEditor()
+        if (sensitiveEditor()) {
+            if (dictation.audio.isRecording) dictation.interrupt("Recording stopped because a password or PIN field was selected.")
+            cancelTarget()
+            removePill()
+            return
+        }
         captured?.let { if (!eligible || it.generation != editorGeneration) it.valid = false }
         if (dictation.recordingInField && !dictation.audio.isRecording) {
             dictation.interrupt("Recording was interrupted.")
             captured = null
         }
-        if (dictation.recordingInField && !eligible) {
-            dictation.interrupt("Recording stopped because you changed text fields.")
-            captured = null
-            tell("Recording stopped because the text field changed. The clip is saved without uploading.")
-        }
         val keyboard = keyboardBounds()
         if (!dictation.audio.isRecording && !dictation.transcription.isTranscribing) captured = null
-        if (!eligible || keyboard == null) { removePill(); return }
         val mode: DictationStatusView.Mode
         val label: String
         when {
-            dictation.recordingInField && dictation.audio.isRecording -> {
+            dictation.audio.isRecording -> {
                 mode = DictationStatusView.Mode.RECORDING
                 label = "Recording"
             }
-            dictation.transcription.isTranscribing && captured?.valid == true -> {
-                mode = DictationStatusView.Mode.TRANSCRIBING
-                label = "Transcribing…"
+            dictation.transcription.isTranscribing -> {
+                mode = DictationStatusView.Mode.PROCESSING
+                label = "Processing"
+            }
+            dictation.recoveryTranscript != null -> {
+                mode = DictationStatusView.Mode.RECOVERY
+                label = "Transcript ready to copy"
             }
             dictation.statusMessage != null && SystemClock.elapsedRealtime() < dictation.statusUntil -> {
-                mode = if (dictation.statusIsError) DictationStatusView.Mode.ERROR else DictationStatusView.Mode.SUCCESS
-                label = dictation.statusMessage!!
+                mode = DictationStatusView.Mode.ERROR
+                label = "Dictation error. ${dictation.statusMessage}"
             }
             else -> { removePill(); return }
         }
@@ -235,28 +251,32 @@ class DictationAccessibilityService : AccessibilityService() {
     }
 
     @SuppressLint("RtlHardcoded") // Keyboard bounds and overlay placement use absolute screen coordinates.
-    private fun showPill(keyboard: Rect, mode: DictationStatusView.Mode, label: String) {
+    private fun showPill(keyboard: Rect?, mode: DictationStatusView.Mode, label: String) {
         val metrics = manager.currentWindowMetrics
         val bounds = metrics.bounds
         val safe = metrics.windowInsets.getInsetsIgnoringVisibility(
             WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout(),
         )
-        val view = pill ?: DictationStatusView(this)
-        val width = view.desiredWidth(mode, label).coerceAtMost(bounds.width() - dp(16))
-        val height = dp(30)
-        val placement = StatusPlacement.aboveKeyboard(
-            OverlayBounds(bounds.left + safe.left, bounds.top + safe.top,
-                bounds.right - safe.right, bounds.bottom - safe.bottom),
-            OverlayBounds(keyboard.left, keyboard.top, keyboard.right, keyboard.bottom),
-            // Leave room for the app's message composer above the keyboard.
-            width, height, dp(96), dp(8),
-            composer = composerBounds(keyboard), composerGap = dp(12),
-        ) ?: run { removePill(); return }
+        val recovery = mode == DictationStatusView.Mode.RECOVERY
+        if (pill != null && (pill is TranscriptRecoveryView) != recovery) removePill()
+        val view = pill ?: if (recovery) TranscriptRecoveryView(this, ::copyRecovery, ::dismissRecovery)
+            else DictationStatusView(this)
+        val width = dp(96).coerceAtMost(bounds.width() - dp(16))
+        val height = dp(if (recovery) 48 else 30)
+        val screen = OverlayBounds(bounds.left + safe.left, bounds.top + safe.top,
+            bounds.right - safe.right, bounds.bottom - safe.bottom)
+        val placement = keyboard?.let {
+            StatusPlacement.aboveKeyboard(screen, OverlayBounds(it.left, it.top, it.right, it.bottom),
+                width, height, dp(96), dp(8), composer = composerBounds(it), composerGap = dp(12))
+        } ?: StatusPlacement.atScreenEdge(screen, width, height, dp(24), atTop = keyboard != null)
+            ?: run { removePill(); return }
         val layout = params
-        view.update(mode, label, if (mode == DictationStatusView.Mode.RECORDING) dictation.audio.peakLevel() else 0f)
+        (view as? DictationStatusView)?.update(mode, label,
+            if (mode == DictationStatusView.Mode.RECORDING) dictation.audio.peakLevel() else 0f)
         if (layout == null) {
             val next = WindowManager.LayoutParams(width, height, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    (if (recovery) WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL else WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT).apply {
                 gravity = Gravity.TOP or Gravity.LEFT
                 x = placement.x
@@ -282,10 +302,32 @@ class DictationAccessibilityService : AccessibilityService() {
         params = null
     }
 
-    private fun tell(message: String, status: String = message) {
-        dictation.notice = message
-        dictation.showStatus(status, error = true)
-        if (!eligibleEditor() || keyboardBounds() == null) Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    private fun tell(message: String) {
+        Log.i("TapDictation", "Error: $message")
+        dictation.showError(message)
+    }
+
+    private fun recover(text: String, reason: String) {
+        Log.i("TapDictation", "Result offered for copy")
+        dictation.showRecovery(text, reason)
+        update()
+    }
+
+    private fun copyRecovery() {
+        val text = dictation.recoveryTranscript ?: return
+        runCatching {
+            getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Transcript", text))
+        }.onSuccess { Log.i("TapDictation", "Recovery copied"); dismissRecovery() }.onFailure {
+            dictation.dismissRecovery()
+            dictation.showError("Could not copy. Your transcript is saved in tap settings.")
+            update()
+        }
+    }
+
+    private fun dismissRecovery() {
+        Log.i("TapDictation", "Recovery dismissed")
+        dictation.dismissRecovery()
+        update()
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
