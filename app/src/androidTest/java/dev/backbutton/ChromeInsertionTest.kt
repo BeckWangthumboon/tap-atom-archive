@@ -3,6 +3,7 @@ package dev.backbutton
 import android.Manifest
 import android.app.UiAutomation
 import android.content.Intent
+import android.content.ComponentName
 import android.net.Uri
 import android.os.SystemClock
 import android.provider.Settings
@@ -148,6 +149,38 @@ class ChromeInsertionTest {
         }
     }
 
+    private fun nativeChecks(service: DictationAccessibilityService) {
+        fun open(field: String) {
+            context.startActivity(Intent().setComponent(ComponentName("dev.backbutton.test", NativeEditorActivity::class.java.name))
+                .putExtra("field", field).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        }
+        open("message")
+        waitFor { service.inputMethod?.currentInputEditorInfo?.packageName == "dev.backbutton.test" && text(service) == "Meet me at noon." }
+        waitForControl(service) // This app was never in the old LINE/browser allowlist.
+        instrumentation.runOnMainSync { service.inputMethod!!.currentInputConnection!!.setSelection(8, 8) }
+        waitFor { service.inputMethod?.currentInputConnection?.getSurroundingText(2048, 2048, 0)?.selectionStart == 8 }
+        lateinit var original: Any
+        instrumentation.runOnMainSync {
+            original = target(service)!!
+            insert(service, original, "tomorrow")
+        }
+        waitFor { text(service) == "Meet me tomorrow at noon." }
+
+        open("other")
+        waitFor { text(service) == "Other field" }
+        waitForControl(service)
+        instrumentation.runOnMainSync {
+            insert(service, original, "must not appear")
+            assertEquals("Other field", text(service))
+        }
+        for (field in listOf("password", "pin")) {
+            open(field)
+            waitFor { service.inputMethod?.currentInputEditorInfo?.fieldId == if (field == "password") 3 else 4 }
+            instrumentation.runOnMainSync { assertNull("$field fields must not be captured", target(service)) }
+            waitFor { service.javaClass.getDeclaredField("pill").apply { isAccessible = true }.get(service) == null }
+        }
+    }
+
     @Test fun insertionPreservesTextAndRejectsChangedTargets() {
         assertEquals("Pass -e browserFixture true to run this opt-in local fixture test",
             "true", InstrumentationRegistry.getArguments().getString("browserFixture"))
@@ -221,6 +254,7 @@ class ChromeInsertionTest {
             waitFor { text(service) == "Meet me at tomorrow." }
             waitForControl(service)
             holdChecks(service)
+            nativeChecks(service)
         } finally {
             instrumentation.runOnMainSync { DictationService.disable(context) }
             instrumentation.runOnMainSync { activity.finish() }

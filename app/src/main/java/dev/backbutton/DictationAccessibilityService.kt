@@ -27,7 +27,6 @@ class DictationAccessibilityService : AccessibilityService() {
     companion object {
         private var connection: WeakReference<DictationAccessibilityService>? = null
         val current: DictationAccessibilityService? get() = connection?.get()
-        private val SUPPORTED = setOf("jp.naver.line.android", "com.android.chrome", "com.sec.android.app.sbrowser")
     }
 
     private data class Target(val text: String, val start: Int, val end: Int, val offset: Int, val generation: Long, var valid: Boolean = true)
@@ -61,7 +60,7 @@ class DictationAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         // Window changes from every app are needed to dismiss the control on app switches.
-        // We only inspect editable content in the explicit LINE/browser allowlist.
+        // Editor context is read locally only when recording starts and when a result arrives.
         update()
     }
 
@@ -109,15 +108,8 @@ class DictationAccessibilityService : AccessibilityService() {
         if (getSystemService(KeyguardManager::class.java).isDeviceLocked) return false
         val method = inputMethod ?: return false
         val info = method.currentInputEditorInfo ?: return false
-        if (!method.currentInputStarted || info.packageName !in SUPPORTED || method.currentInputConnection == null) return false
-        val kind = info.inputType and android.text.InputType.TYPE_MASK_CLASS
-        val variation = info.inputType and android.text.InputType.TYPE_MASK_VARIATION
-        if (kind == android.text.InputType.TYPE_NULL) return false
-        return !(kind == android.text.InputType.TYPE_CLASS_TEXT && variation in setOf(
-            android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD,
-            android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD,
-            android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
-        ) || kind == android.text.InputType.TYPE_CLASS_NUMBER && variation == android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD)
+        if (!method.currentInputStarted || method.currentInputConnection == null) return false
+        return EditorEligibility.accepts(info.packageName, packageName, info.inputType)
     }
 
     private fun snapshot(): Target? {
@@ -141,7 +133,7 @@ class DictationAccessibilityService : AccessibilityService() {
     fun start(heldBy: DictationSession.Input? = null): Boolean {
         if (!dictation.crossAppEnabled || dictation.transcription.isTranscribing || dictation.audio.isRecording) return false
         if (!eligibleEditor() || keyboardBounds() == null) {
-            tell("Tap a LINE or browser text field first.")
+            tell("Tap a text field and open the keyboard first.")
             return false
         }
         val target = snapshot()
