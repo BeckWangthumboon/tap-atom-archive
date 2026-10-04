@@ -143,13 +143,13 @@ class DictationAccessibilityService : AccessibilityService() {
             if (result.isBlank()) tell("No speech detected.")
             else if (target == null) recover(result, "Transcript ready to copy. No input field was selected when recording started.")
             else runCatching { insert(target, result) }.onFailure {
-                recover(result, "Could not insert here. Copy your saved transcript or find it in tap settings.")
+                recover(result, "Could not insert here. Copy your saved transcript or find it in Tap settings.")
             }
         }, heldBy = heldBy)
         Log.i("TapDictation", "Capture start: started=$started insertionTarget=${target != null} held=${heldBy != null}")
         if (!started) {
             cancelTarget()
-            tell(dictation.audio.message ?: "Could not start recording. Open tap and enable dictation again.")
+            tell(dictation.audio.message ?: "Could not start recording. Open Tap and enable dictation again.")
         }
         update()
         return started
@@ -162,11 +162,11 @@ class DictationAccessibilityService : AccessibilityService() {
         if (!dictation.crossAppEnabled || !target.valid || latest == null || target.generation != latest.generation ||
             target.offset != latest.offset || !TextInsertion.unchanged(target.text, target.start, target.end,
                 latest.text, latest.start, latest.end)) {
-            recover(result, "Field changed. Copy your saved transcript or find it in tap settings.")
+            recover(result, "Field changed. Copy your saved transcript or find it in Tap settings.")
             return
         }
         val inserted = TextInsertion.replacement(target.text, target.start, target.end, result)
-            ?: run { recover(result, "Could not insert here. Your transcript is saved in tap."); return }
+            ?: run { recover(result, "Could not insert here. Your transcript is saved in Tap."); return }
         insertionInProgress = true
         try {
             // The accessibility input connection finishes existing IME composition, then commits
@@ -319,7 +319,7 @@ class DictationAccessibilityService : AccessibilityService() {
             getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Transcript", text))
         }.onSuccess { Log.i("TapDictation", "Recovery copied"); dismissRecovery() }.onFailure {
             dictation.dismissRecovery()
-            dictation.showError("Could not copy. Your transcript is saved in tap settings.")
+            dictation.showError("Could not copy. Your transcript is saved in Tap settings.")
             update()
         }
     }

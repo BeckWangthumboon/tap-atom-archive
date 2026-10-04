@@ -212,7 +212,7 @@ class ChromeInsertionTest {
         touch(MotionEvent.ACTION_DOWN, Pair(copyPosition.first + 24 * density, copyPosition.second), copyDownAt)
         touch(MotionEvent.ACTION_UP, Pair(copyPosition.first + 24 * density, copyPosition.second), copyDownAt)
         waitForIdle(service)
-        // Read the clipboard with tap foreground, matching normal Android clipboard access.
+        // Read the clipboard with Tap foreground, matching normal Android clipboard access.
         context.startActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         SystemClock.sleep(500)
         instrumentation.runOnMainSync {
@@ -506,7 +506,7 @@ class ChromeInsertionTest {
         // Instrumentation force-stops the target process. Rebind only this already-enabled
         // service on the dedicated test device; never enable a service the user has not enabled.
         val enabled = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
-        assertTrue("Enable tap dictation in Accessibility first", enabled.split(':').any {
+        assertTrue("Enable Tap dictation in Accessibility first", enabled.split(':').any {
             android.content.ComponentName.unflattenFromString(it)?.className == DictationAccessibilityService::class.java.name
         })
         automation.adoptShellPermissionIdentity(Manifest.permission.WRITE_SECURE_SETTINGS)

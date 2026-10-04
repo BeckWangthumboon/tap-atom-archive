@@ -1,7 +1,7 @@
-package dev.backbutton
+package dev.backbutton.button
 
 /** Validates ordered edge notifications; a reconnect read is only a baseline. */
-class ButtonEvents {
+internal class ButtonEvents {
     enum class Action { PRESS, RELEASE, IGNORE, GAP, INVALID }
     private data class Packet(val pressed: Boolean, val sequence: Long)
     private var previous: Packet? = null

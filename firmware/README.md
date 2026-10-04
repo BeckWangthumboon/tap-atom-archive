@@ -1,5 +1,7 @@
 # ATOM Lite button firmware
 
+This is the first hardware implementation of the general-purpose button, documented as [ATOM v1](../docs/prototypes/atom-v1.md). This repository is intended for a future portfolio archive. A different board, switch, case, or power system can implement the same interface; hardware changes do not automatically require a protocol change.
+
 ## Physical setup
 
 The prototype uses an M5Stack ATOM Lite (ESP32-PICO-D4) and its built-in active-low button on GPIO39. USB powers the board and provides a serial port for programming and verifying presses. Phone control uses Bluetooth; no external button wires or phone USB connection are needed.
@@ -37,7 +39,7 @@ Each debounced edge gets a new sequence number. The switch must remain stable fo
 
 ## Phone connection
 
-Power the ATOM over USB and follow [the Android setup instructions](../README.md#samsung-setup). The phone interprets clicks and holds; this firmware has no microphone or transcription service. BLE identifiers and packet format live in `src/main.cpp` and the Android button client.
+Power the ATOM over USB and follow [the Android setup instructions](../README.md#samsung-setup). The phone interprets clicks and holds; this firmware has no microphone or transcription service. The interface is documented in [BLE v1](../protocol/ble-v1.md), implemented here in `src/main.cpp` and on Android in `button-android`.
 
 ## Debounce checks
 

@@ -1,4 +1,4 @@
 <resources>
     <string name="accessibility_description">Shows a small floating waveform while dictating with your physical button, even without a keyboard. Inserts transcripts into compatible fields selected when recording begins, or offers Copy when no insertion target is available. Recording and processing indicators do not accept taps. Red signals an error. If insertion fails, small Copy and Dismiss icons let you recover the saved transcript. Password and PIN fields are excluded. Checks field text and selection locally to preserve existing text. Click your physical button to start and stop, or hold until the vibration and release to finish.</string>
-    <string name="app_name">tap</string>
+    <string name="app_name">Tap</string>
 </resources>

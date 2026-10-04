@@ -1,4 +1,4 @@
-package dev.backbutton
+package dev.backbutton.button
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -11,7 +11,7 @@ class ButtonEventsTest {
         sequence.toByte(), (sequence shr 8).toByte(), (sequence shr 16).toByte(), (sequence shr 24).toByte(),
     )
 
-    @Test fun heldButtonOnConnectDoesNotStartRecording() {
+    @Test fun heldButtonOnConnectDoesNotEmitAPress() {
         val events = ButtonEvents()
         assertTrue(events.baseline(packet(true, 7)))
         assertEquals(ButtonEvents.Action.IGNORE, events.accept(packet(true, 7)))
@@ -19,7 +19,7 @@ class ButtonEventsTest {
         assertEquals(ButtonEvents.Action.PRESS, events.accept(packet(true, 9)))
     }
 
-    @Test fun duplicatesAndLatePacketsCannotToggleRecordingAgain() {
+    @Test fun duplicatesAndLatePacketsDoNotEmitExtraEdges() {
         val events = ButtonEvents()
         events.baseline(packet(false, 0))
         assertEquals(ButtonEvents.Action.PRESS, events.accept(packet(true, 1)))

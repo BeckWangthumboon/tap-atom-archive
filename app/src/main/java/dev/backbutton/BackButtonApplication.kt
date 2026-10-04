@@ -13,21 +13,32 @@ import androidx.compose.runtime.setValue
 
 class BackButtonApplication : Application() {
     val dictation by lazy { DictationSession(this) }
+    val button by lazy {
+        PhysicalButtonClient(this,
+            onPress = { dictation.press(DictationSession.Input.BUTTON) },
+            onRelease = { dictation.release(DictationSession.Input.BUTTON) },
+            onSignalLost = { dictation.interrupt("Recording stopped because the button signal was lost.") },
+        )
+    }
 }
 
 val Context.dictation: DictationSession
     get() = (applicationContext as BackButtonApplication).dictation
 
-/** One owner for the microphone, uploads, and BLE, shared by the screen and service. */
+val Context.physicalButton: PhysicalButtonClient
+    get() = (applicationContext as BackButtonApplication).button
+
+/** Dictation policy and one owner for the microphone and uploads, shared by screen and service. */
 class DictationSession(context: Context) {
     enum class Input { BUTTON }
     private val handler = Handler(Looper.getMainLooper())
     private val gestures = Input.entries.associateWith { RecordingGesture() }
     private val holdTimers = mutableMapOf<Input, Runnable>()
-    val audio = AudioSession(context)
+    val audio = AudioSession(context, onRecordingError = { reason ->
+        interrupt(reason)
+        showError(reason)
+    })
     val transcription = TranscriptionSession(context)
-    val button = BleButtonConnection(context, { press(Input.BUTTON) }, { release(Input.BUTTON) },
-        { interrupt("Recording stopped because the button signal was lost.") })
 
     var crossAppEnabled by mutableStateOf(false)
         internal set
@@ -159,7 +170,6 @@ class DictationSession(context: Context) {
         if (!crossAppEnabled) {
             cancelPress(Input.BUTTON)
             interrupt("Recording stopped because you left the app.")
-            button.pause()
         }
     }
 }

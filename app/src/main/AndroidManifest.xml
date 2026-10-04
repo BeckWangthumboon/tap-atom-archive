@@ -7,9 +7,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+    <!-- Also declared by the library; explicit here for foreground-service lint validation. -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
     <application
         android:name=".BackButtonApplication"
         android:allowBackup="false"
@@ -21,7 +20,7 @@
         <service android:name=".DictationService" android:exported="false"
             android:foregroundServiceType="microphone|connectedDevice" />
         <service android:name=".DictationAccessibilityService" android:exported="true"
-            android:label="tap dictation"
+            android:label="Tap dictation"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />

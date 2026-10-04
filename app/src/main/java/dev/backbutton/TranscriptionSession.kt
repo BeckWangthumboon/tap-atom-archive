@@ -14,9 +14,11 @@ import java.io.File
 import java.net.SocketTimeoutException
 import java.io.IOException
 
-class TranscriptionSession(context: Context) {
+class TranscriptionSession(
+    context: Context,
+    private val transcribeAudio: suspend (File, String) -> String = FishAudioClient()::transcribe,
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val client = FishAudioClient()
     private val keyFile = File(context.filesDir, "fish-audio-key")
     private val recordingFile = File(context.filesDir, "latest-recording.m4a")
     private val transcriptFile = File(context.filesDir, "latest-transcript.txt")
@@ -27,6 +29,8 @@ class TranscriptionSession(context: Context) {
     var transcript by mutableStateOf(runCatching { transcriptFile.readText() }.getOrNull())
         private set
     var error by mutableStateOf<String?>(null)
+        private set
+    var persistenceWarning by mutableStateOf<String?>(null)
         private set
     var hasApiKey by mutableStateOf(false)
         private set
@@ -68,6 +72,7 @@ class TranscriptionSession(context: Context) {
         transcriptFile.delete()
         transcript = null
         error = null
+        persistenceWarning = null
     }
 
     fun transcribe(onResult: ((String) -> Unit)? = null, onError: ((String) -> Unit)? = null) {
@@ -83,13 +88,24 @@ class TranscriptionSession(context: Context) {
         Log.i("TapDictation", "Processing started")
         scope.launch {
             try {
-                val result = client.transcribe(recordingFile, key)
+                val result = transcribeAudio(recordingFile, key)
                 Log.i("TapDictation", "Processing completed: speechDetected=${result.isNotBlank()}")
                 if (result.isNotBlank()) {
-                    transcriptFile.writeText(result)
                     transcript = result
                     transcriptDismissed = false
                     preferences.edit().putBoolean("dismissed", false).apply()
+                    persistenceWarning = null
+                    val pending = File(transcriptFile.parentFile, "latest-transcript.pending")
+                    try {
+                        pending.writeText(result)
+                        if (!pending.renameTo(transcriptFile)) throw IOException("Could not save transcript")
+                    } catch (_: IOException) {
+                        // A usable recognition result must still reach the editor/recovery UI.
+                        persistenceWarning = "The latest transcript could not be saved. Copy it before closing the app."
+                        Log.w("TapDictation", "Transcript persistence failed; result is available in memory")
+                    } finally {
+                        pending.delete()
+                    }
                 }
                 onResult?.invoke(result)
             } catch (cancelled: CancellationException) {

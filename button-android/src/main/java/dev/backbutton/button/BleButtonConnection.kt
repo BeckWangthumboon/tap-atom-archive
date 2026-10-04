@@ -1,4 +1,4 @@
-package dev.backbutton
+package dev.backbutton.button
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -21,25 +21,36 @@ import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
 import android.util.Log
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import java.util.UUID
 
+/**
+ * Protocol-v1 BLE input connection. Call methods on the main thread; callbacks also run there.
+ * The host owns permissions and lifecycle, including any service needed for background listening.
+ * An initial state read never emits a press; interrupted continuity is reported to the host.
+ */
 @SuppressLint("MissingPermission") // Each operation is gated by runtime permissions; revocation is handled.
 class BleButtonConnection(
-    private val context: Context,
+    context: Context,
     private val onPress: () -> Unit,
     private val onRelease: () -> Unit,
     private val onSignalLost: () -> Unit,
+    private val onStatusChanged: (Status) -> Unit = {},
 ) {
+    enum class Status {
+        NOT_CONNECTED, PERMISSION_REQUIRED, PAUSED, CLOSED, DISCONNECTED,
+        BLUETOOTH_DISABLED, SCANNER_UNAVAILABLE, SCANNING, SCAN_FAILED, NOT_FOUND,
+        CONNECTING, CONNECTION_LOST, PREPARING, SERVICE_READ_FAILED, INCOMPATIBLE_DEVICE,
+        SUBSCRIPTION_FAILED, STATE_READ_FAILED, UNSUPPORTED_SIGNAL, CONNECTED,
+        CONNECTION_FAILED, CONNECTION_TIMED_OUT, PERMISSION_REVOKED,
+    }
+
     companion object {
         val SERVICE: UUID = UUID.fromString("b8b10001-64df-4f6d-b7d1-86a6e72f8d21")
         val EVENT: UUID = UUID.fromString("b8b10002-64df-4f6d-b7d1-86a6e72f8d21")
         val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     }
 
+    private val context = context.applicationContext
     private val handler = Handler(Looper.getMainLooper())
     private val preferences = context.getSharedPreferences("physical-button", Context.MODE_PRIVATE)
     private val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
@@ -53,21 +64,19 @@ class BleButtonConnection(
     private var timeout: Runnable? = null
     private var reconnect: Runnable? = null
 
-    var connected by mutableStateOf(false)
-        private set
-    var busy by mutableStateOf(false)
-        private set
-    var status by mutableStateOf("Button not connected")
-        private set
-    var presses by mutableIntStateOf(0)
-        private set
-    var lastEvent by mutableStateOf<String?>(null)
-        private set
+    var status = Status.NOT_CONNECTED
+        private set(value) {
+            field = value
+            onStatusChanged(value)
+        }
+    val connected: Boolean get() = status == Status.CONNECTED
+    val busy: Boolean get() = status in setOf(Status.SCANNING, Status.CONNECTING, Status.PREPARING)
+    private var presses = 0
 
     fun hasPermissions(): Boolean = listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
         .all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
 
-    fun permissionDenied() { status = "Allow Nearby devices access to connect the button." }
+    fun permissionDenied() { status = Status.PERMISSION_REQUIRED }
 
     fun resume() {
         visible = true
@@ -77,13 +86,14 @@ class BleButtonConnection(
     fun pause() {
         visible = false
         cleanup()
-        status = "Button paused while app is closed"
+        status = Status.PAUSED
     }
 
     fun close() {
         closed = true
         visible = false
         cleanup()
+        status = Status.CLOSED
     }
 
     fun connect() {
@@ -96,7 +106,7 @@ class BleButtonConnection(
         preferences.edit().remove("address").apply()
         cleanup()
         onSignalLost()
-        status = "Button disconnected"
+        status = Status.DISCONNECTED
     }
 
     private fun beginScan() {
@@ -105,15 +115,14 @@ class BleButtonConnection(
         if (!hasPermissions()) { permissionDenied(); return }
         try {
             if (adapter == null || !adapter.isEnabled) {
-                status = "Turn on Bluetooth, then tap Connect button."
+                status = Status.BLUETOOTH_DISABLED
                 return
             }
             val available = adapter.bluetoothLeScanner ?: run {
-                status = "Bluetooth scanning is unavailable."
+                status = Status.SCANNER_UNAVAILABLE
                 return
             }
-            busy = true
-            status = "Looking for your ATOM…"
+            status = Status.SCANNING
             val expectedAddress = preferences.getString("address", null)
             val callback = object : ScanCallback() {
                 override fun onScanResult(callbackType: Int, result: ScanResult) {
@@ -125,11 +134,11 @@ class BleButtonConnection(
                                 cancelTimeout()
                                 connectDevice(result.device)
                             }
-                        } catch (_: SecurityException) { fail("Bluetooth permission was removed.") }
+                        } catch (_: SecurityException) { fail(Status.PERMISSION_REVOKED) }
                     }
                 }
                 override fun onScanFailed(errorCode: Int) {
-                    handler.post { if (scan === this) fail("Could not scan for the button. Tap Connect to retry.") }
+                    handler.post { if (scan === this) fail(Status.SCAN_FAILED) }
                 }
             }
             scanner = available
@@ -138,28 +147,27 @@ class BleButtonConnection(
                 listOf(ScanFilter.Builder().setServiceUuid(ParcelUuid(SERVICE)).build()),
                 ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(), callback,
             )
-            setTimeout { fail("Button not found. Check USB power and tap Connect to retry.") }
-        } catch (_: SecurityException) { fail("Bluetooth permission was removed.") }
-        catch (_: IllegalStateException) { fail("Turn on Bluetooth, then tap Connect button.") }
+            setTimeout { fail(Status.NOT_FOUND) }
+        } catch (_: SecurityException) { fail(Status.PERMISSION_REVOKED) }
+        catch (_: IllegalStateException) { fail(Status.BLUETOOTH_DISABLED) }
     }
 
     private fun connectDevice(device: BluetoothDevice) {
-        status = "Connecting to ATOM…"
-        busy = true
+        status = Status.CONNECTING
         val callback = object : BluetoothGattCallback() {
             override fun onConnectionStateChange(current: BluetoothGatt, code: Int, newState: Int) = dispatch(current) {
                 if (code != BluetoothGatt.GATT_SUCCESS || newState == BluetoothProfile.STATE_DISCONNECTED) {
                     val wasReady = connected
-                    fail("Button connection lost. Tap Connect to retry.")
-                    // One bounded automatic attempt, only while the app is visible.
+                    fail(Status.CONNECTION_LOST)
+                    // One bounded automatic attempt, only while the host has resumed listening.
                     if (wasReady && wanted && visible) {
                         val retry = Runnable { if (visible && wanted && !closed) beginScan() }
                         reconnect = retry
                         handler.postDelayed(retry, 1500)
                     }
                 } else if (newState == BluetoothProfile.STATE_CONNECTED) {
-                    status = "Preparing button…"
-                    if (!current.discoverServices()) fail("Could not read the button services.")
+                    status = Status.PREPARING
+                    if (!current.discoverServices()) fail(Status.SERVICE_READ_FAILED)
                 }
             }
 
@@ -167,10 +175,10 @@ class BleButtonConnection(
                 val characteristic = current.getService(SERVICE)?.getCharacteristic(EVENT)
                 val descriptor = characteristic?.getDescriptor(CCCD)
                 if (code != BluetoothGatt.GATT_SUCCESS || characteristic == null || descriptor == null) {
-                    fail("This device does not have the tap firmware.")
+                    fail(Status.INCOMPATIBLE_DEVICE)
                 } else if (!current.setCharacteristicNotification(characteristic, true) ||
                     current.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) != BluetoothStatusCodes.SUCCESS) {
-                    fail("Could not subscribe to button presses.")
+                    fail(Status.SUBSCRIPTION_FAILED)
                 }
             }
 
@@ -178,21 +186,18 @@ class BleButtonConnection(
                 if (descriptor.uuid != CCCD) return@dispatch
                 val characteristic = current.getService(SERVICE)?.getCharacteristic(EVENT)
                 if (code != BluetoothGatt.GATT_SUCCESS || characteristic == null || !current.readCharacteristic(characteristic)) {
-                    fail("Could not read the initial button state.")
+                    fail(Status.STATE_READ_FAILED)
                 }
             }
 
             override fun onCharacteristicRead(current: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray, code: Int) = dispatch(current) {
                 if (characteristic.uuid != EVENT) return@dispatch
                 if (code != BluetoothGatt.GATT_SUCCESS || !events.baseline(value)) {
-                    fail("Unsupported button signal.")
+                    fail(Status.UNSUPPORTED_SIGNAL)
                 } else {
                     cancelTimeout()
-                    connected = true
-                    busy = false
                     preferences.edit().putString("address", current.device.address).apply()
-                    status = "Button connected"
-                    lastEvent = "Ready for a new press"
+                    status = Status.CONNECTED
                     Log.i("BackButtonBLE", "Connected; initial button state read")
                 }
             }
@@ -202,41 +207,38 @@ class BleButtonConnection(
                 when (events.accept(value)) {
                     ButtonEvents.Action.PRESS -> {
                         presses++
-                        lastEvent = "Press received ($presses)"
                         Log.i("BackButtonBLE", "PRESS count=$presses")
                         onPress()
                     }
                     ButtonEvents.Action.RELEASE -> {
-                        lastEvent = "Button released"
                         Log.i("BackButtonBLE", "RELEASE")
                         onRelease()
                     }
                     ButtonEvents.Action.GAP -> {
-                        lastEvent = "Signal skipped; recording stopped safely"
                         onSignalLost()
                     }
-                    ButtonEvents.Action.INVALID -> fail("Unsupported button signal.")
+                    ButtonEvents.Action.INVALID -> fail(Status.UNSUPPORTED_SIGNAL)
                     ButtonEvents.Action.IGNORE -> Unit
                 }
             }
         }
         try {
             gatt = device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
-            if (gatt == null) fail("Could not connect to the button.")
-            else setTimeout { fail("Button connection timed out. Tap Connect to retry.") }
-        } catch (_: SecurityException) { fail("Bluetooth permission was removed.") }
+            if (gatt == null) fail(Status.CONNECTION_FAILED)
+            else setTimeout { fail(Status.CONNECTION_TIMED_OUT) }
+        } catch (_: SecurityException) { fail(Status.PERMISSION_REVOKED) }
     }
 
     private fun dispatch(current: BluetoothGatt, action: () -> Unit) {
         handler.post {
             if (current !== gatt || !visible || closed) return@post
-            try { action() } catch (_: SecurityException) { fail("Bluetooth permission was removed.") }
+            try { action() } catch (_: SecurityException) { fail(Status.PERMISSION_REVOKED) }
         }
     }
 
-    private fun fail(message: String) {
+    private fun fail(reason: Status) {
         cleanup()
-        status = message
+        status = reason
         onSignalLost()
     }
 
@@ -271,7 +273,6 @@ class BleButtonConnection(
             old.close()
         }
         events.reset()
-        connected = false
-        busy = false
+        status = Status.NOT_CONNECTED
     }
 }

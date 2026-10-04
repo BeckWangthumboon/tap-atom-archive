@@ -17,7 +17,10 @@ import androidx.compose.runtime.setValue
 import java.io.File
 
 /** Microphone and playback resources owned by the shared dictation session. */
-class AudioSession(private val context: Context) {
+class AudioSession(
+    private val context: Context,
+    private val onRecordingError: (String) -> Unit = {},
+) {
     private val recording = File(context.filesDir, "latest-recording.m4a")
     private val pending = File(context.filesDir, "recording-in-progress.m4a")
     private var recorder: MediaRecorder? = null
@@ -69,12 +72,7 @@ class AudioSession(private val context: Context) {
             next.setAudioSamplingRate(44100)
             next.setAudioEncodingBitRate(128000)
             next.setOutputFile(pending.absolutePath)
-            next.setOnErrorListener { active, _, _ ->
-                if (recorder === active) {
-                    abandonRecording()
-                    message = "Recording was interrupted. Please try again."
-                }
-            }
+            next.setOnErrorListener { active, _, _ -> recordingFailed(active) }
             next.prepare()
             next.start()
             recorder = next
@@ -116,6 +114,14 @@ class AudioSession(private val context: Context) {
         } finally {
             active.release()
         }
+    }
+
+    private fun recordingFailed(active: MediaRecorder) {
+        if (recorder !== active) return
+        abandonRecording()
+        val reason = "Recording was interrupted. Please try again."
+        message = reason
+        onRecordingError(reason)
     }
 
     private fun abandonRecording() {

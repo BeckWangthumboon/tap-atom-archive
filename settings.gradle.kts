@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "BackButton"
-include(":app")
+include(":app", ":button-android")

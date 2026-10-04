@@ -18,7 +18,7 @@ import android.os.IBinder
 class DictationService : Service() {
     companion object {
         const val STOP = "dev.backbutton.STOP_DICTATION"
-        private const val CHANNEL = "dictation-ready"
+        internal const val CHANNEL = "dictation-ready"
         private const val NOTIFICATION = 1
 
         fun enable(context: Context) {
@@ -65,13 +65,13 @@ class DictationService : Service() {
             .build()
         try {
             val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
-                if (dictation.button.hasPermissions()) ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE else 0
+                if (physicalButton.hasPermissions()) ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE else 0
             startForeground(NOTIFICATION, notification, types)
             dictation.crossAppEnabled = true
             dictation.notice = null
-            dictation.button.resume()
+            physicalButton.resume()
         } catch (_: SecurityException) {
-            dictation.notice = "Open tap and enable cross-app dictation again."
+            dictation.notice = "Open Tap and enable cross-app dictation again."
             stopSelf()
         }
         // A killed service must be enabled again from a visible screen, never restarted into capture.
@@ -82,7 +82,7 @@ class DictationService : Service() {
         DictationAccessibilityService.current?.cancelTarget()
         dictation.crossAppEnabled = false
         dictation.interrupt("Recording stopped because cross-app dictation was turned off.")
-        if (!dictation.activityVisible) dictation.button.pause()
+        if (!dictation.activityVisible) physicalButton.pause()
         unregisterReceiver(screenOff)
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
