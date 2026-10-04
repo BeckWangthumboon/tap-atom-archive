@@ -1,6 +1,12 @@
 # ATOM Lite button firmware
 
-Hardware: M5Stack ATOM Lite (ESP32-PICO-D4), using its built-in active-low button on GPIO39. USB powers the board and provides a serial port for programming and verifying presses. No external wires or phone USB connection are needed.
+## Physical setup
+
+The prototype uses an M5Stack ATOM Lite (ESP32-PICO-D4) and its built-in active-low button on GPIO39. USB powers the board and provides a serial port for programming and verifying presses. Phone control uses Bluetooth; no external button wires or phone USB connection are needed.
+
+The development host is a MacBook. Both a direct USB-C connection and the user's multiport USB hub have provided working serial access. The board uses an FTDI USB serial interface; select its current `/dev/cu.*` port rather than assuming a saved path. Rear mounting, battery power, and enclosure design are still undecided.
+
+## Build and flash
 
 Install PlatformIO in an isolated Python environment, then build and flash the intended board:
 
@@ -29,17 +35,9 @@ BUTTON RELEASE seq=2
 
 Each debounced edge gets a new sequence number. The switch must remain stable for 35 ms, so a hold generates one press and one release, not repeated presses. The small reset switch restarts the board instead.
 
-## BLE protocol
+## Phone connection
 
-The board advertises as `BackButton ATOM` and provides:
-
-- Service: `b8b10001-64df-4f6d-b7d1-86a6e72f8d21`
-- Read/notify characteristic: `b8b10002-64df-4f6d-b7d1-86a6e72f8d21`
-- Payload: 6 bytes; protocol version `1`, pressed flag `0` or `1`, then a 32-bit edge sequence in little-endian order.
-
-The readable value reflects the current button state. A phone client should subscribe and establish a baseline before reacting to new press edges; reconnecting or holding the button during connection must not trigger dictation. Sequence numbers restart after a board reboot. The board advertises again after disconnect. Gesture interpretation belongs in the Android app.
-
-The Android app uses this service for foreground tap-to-toggle recording. Power the ATOM over USB, open the app, tap **Connect button**, and allow Nearby devices access. Wait for **Button connected** before pressing. This firmware contains no microphone, API keys, or transcription code; those remain on the phone.
+Power the ATOM over USB and follow [the Android setup instructions](../README.md#samsung-setup). The phone interprets clicks and holds; this firmware has no microphone or transcription service. BLE identifiers and packet format live in `src/main.cpp` and the Android button client.
 
 ## Debounce checks
 
