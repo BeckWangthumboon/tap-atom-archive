@@ -17,6 +17,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -24,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -35,9 +37,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
@@ -128,6 +133,7 @@ private fun RecordingScreen(
     val context = LocalContext.current
     var notificationsAllowed by remember { mutableStateOf(context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { notificationsAllowed = it }
+    var showSetup by rememberSaveable { mutableStateOf(false) }
     val bluetoothPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         if (grants.values.all { it } && button.hasPermissions()) button.connect()
         else button.permissionDenied()
@@ -142,46 +148,40 @@ private fun RecordingScreen(
     Scaffold { insets ->
         Column(
             modifier = Modifier.fillMaxSize().padding(insets).verticalScroll(rememberScrollState()).padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Back Button", style = MaterialTheme.typography.headlineLarge)
-            Text("Record a short clip and turn it into text.", style = MaterialTheme.typography.bodyLarge)
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Dictate in other apps", style = MaterialTheme.typography.titleLarge)
-                    Text(if (session.crossAppEnabled) "Dictation ready" else "Cross-app dictation is off")
-                    Text(if (session.accessibilityConnected) "Text insertion access enabled" else "Enable Back Button dictation in Accessibility settings.")
-                    OutlinedButton(onClick = openAccessibility) { Text("Accessibility settings") }
-                    Button(onClick = enableCrossApp) {
-                        Text(if (session.crossAppEnabled) "Turn off cross-app dictation" else "Enable cross-app dictation")
-                    }
-                    if (!notificationsAllowed) OutlinedButton(onClick = { notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) }) {
-                        Text("Allow status notifications")
-                    }
-                    Text("Open a text field in any app. Tap Record, then Stop, or hold until the vibration, speak, and release to insert text. Drag before recording starts to move the control; move during a hold to cancel.")
-                    Text("Password fields are excluded. Some custom editors require copying the transcript from this app.", style = MaterialTheme.typography.bodySmall)
-                    Text("The microphone stays off until you record. Enable dictation again after the app restarts.", style = MaterialTheme.typography.bodySmall)
-                    session.notice?.let { Text(it) }
-                }
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium)
+                Text("Speak. Put it into words.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Card(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Physical button", style = MaterialTheme.typography.titleLarge)
-                    Text(button.status)
-                    button.lastEvent?.let { Text(it) }
-                    Text("Presses received: ${button.presses}", style = MaterialTheme.typography.bodySmall)
-                    OutlinedButton(onClick = {
-                        if (button.connected || button.busy) button.disconnect()
-                        else if (button.hasPermissions()) button.connect()
-                        else bluetoothPermission.launch(arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT))
-                    }) {
-                        Text(if (button.connected) "Disconnect button" else if (button.busy) "Cancel connection" else "Connect button")
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(when {
+                        !session.accessibilityConnected -> "Set up dictation in other apps"
+                        session.crossAppEnabled -> "Dictation ready in other apps"
+                        else -> "Dictation in other apps is off"
+                    }, style = MaterialTheme.typography.titleMedium)
+                    Text(when {
+                        !session.accessibilityConnected -> "Enable text insertion in Accessibility settings."
+                        session.crossAppEnabled -> "Open a text field to use the compact control."
+                        else -> "Enable it to record from your keyboard."
+                    }, style = MaterialTheme.typography.bodySmall)
+                    if (!session.accessibilityConnected) {
+                        Button(onClick = openAccessibility) { Text("Set up text insertion") }
+                        if (session.crossAppEnabled) TextButton(onClick = enableCrossApp) { Text("Turn off dictation") }
+                    } else {
+                        Button(onClick = enableCrossApp) {
+                            Text(if (session.crossAppEnabled) "Turn off dictation" else "Enable cross-app dictation")
+                        }
                     }
-                    Text("Click once to record, again to stop. Or hold until the vibration, speak, and release to transcribe. Enable cross-app dictation to use the button in other apps.", style = MaterialTheme.typography.bodySmall)
                 }
             }
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            session.notice?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
                         when {
                             transcription.isTranscribing -> "Transcribing…"
@@ -191,62 +191,100 @@ private fun RecordingScreen(
                             audio.hasRecording -> "Recording saved"
                             else -> "Ready to record"
                         },
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         color = if (audio.isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
                         formatTime(if (audio.isRecording) elapsed else audio.durationMillis),
-                        style = MaterialTheme.typography.displayMedium,
+                        style = MaterialTheme.typography.headlineLarge,
                     )
-                    Text(if (audio.isRecording) "Speak now. Leaving the app stops recording." else "Tap Stop to send this clip to Fish Audio for transcription.")
+                    Text(when {
+                        audio.isRecording -> "Speak now. Keep this screen open while recording here."
+                        transcription.isTranscribing -> "Your transcript will appear below."
+                        audio.hasRecording -> "Record again to replace this clip."
+                        else -> "Tap to start. Stop to transcribe."
+                    }, style = MaterialTheme.typography.bodySmall)
+                    Button(
+                        onClick = toggleRecording,
+                        enabled = !transcription.isTranscribing,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(if (audio.isRecording) "Stop recording" else if (audio.hasRecording) "Record again" else "Start recording")
+                    }
+                    transcription.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    audio.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
-            }
-            Button(
-                onClick = toggleRecording,
-                enabled = !transcription.isTranscribing,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (audio.isRecording) "Stop recording" else if (audio.hasRecording) "Record again" else "Start recording")
-            }
-            if (audio.hasRecording && !audio.isRecording) {
-                OutlinedButton(
-                    onClick = { if (audio.isPlaying || audio.isPreparingPlayback) audio.stopPlayback() else audio.play() },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(if (audio.isPlaying || audio.isPreparingPlayback) "Stop playback" else "Play recording")
-                }
-                OutlinedButton(
-                    onClick = { transcription.transcribe() },
-                    enabled = !transcription.isTranscribing,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(if (transcription.error != null) "Retry transcription" else "Transcribe recording")
-                }
-                TextButton(
-                    onClick = {
-                        audio.deleteRecording()
-                        if (!audio.hasRecording) transcription.clear()
-                    },
-                    enabled = !transcription.isTranscribing,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Delete recording")
-                }
-                Text("Recording again replaces this clip.", style = MaterialTheme.typography.bodySmall)
             }
             transcription.transcript?.let { text ->
                 Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Transcript", style = MaterialTheme.typography.titleLarge)
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text("Latest transcript", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                            if (text.isNotBlank()) TextButton(onClick = { copyTranscript(text) }) { Text("Copy") }
+                        }
                         SelectionContainer { Text(text.ifBlank { "No speech detected. Try another recording." }) }
-                        if (text.isNotBlank()) TextButton(onClick = { copyTranscript(text) }) { Text("Copy transcript") }
                     }
                 }
             }
-            transcription.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            audio.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            TextButton(onClick = openSettings) { Text("Microphone settings") }
-            Text("On first use, allow microphone access, then tap Start recording again. Leaving the app or locking your phone stops recording without uploading.", style = MaterialTheme.typography.bodySmall)
+            if (audio.hasRecording && !audio.isRecording) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { if (audio.isPlaying || audio.isPreparingPlayback) audio.stopPlayback() else audio.play() },
+                            modifier = Modifier.weight(1f),
+                        ) { Text(if (audio.isPlaying || audio.isPreparingPlayback) "Stop playback" else "Play recording") }
+                        OutlinedButton(
+                            onClick = { transcription.transcribe() },
+                            enabled = !transcription.isTranscribing,
+                            modifier = Modifier.weight(1f),
+                        ) { Text(if (transcription.error != null) "Retry" else "Transcribe") }
+                    }
+                    TextButton(onClick = {
+                        audio.deleteRecording()
+                        if (!audio.hasRecording) transcription.clear()
+                    }, enabled = !transcription.isTranscribing) { Text("Delete recording") }
+                }
+            }
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Physical button", style = MaterialTheme.typography.titleMedium)
+                    Text(button.status, style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(onClick = {
+                        if (button.connected || button.busy) button.disconnect()
+                        else if (button.hasPermissions()) button.connect()
+                        else bluetoothPermission.launch(arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT))
+                    }) {
+                        Text(if (button.connected) "Disconnect button" else if (button.busy) "Cancel connection" else "Connect button")
+                    }
+                }
+            }
+            TextButton(onClick = { showSetup = !showSetup }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (showSetup) "Hide setup & help" else "Setup & help")
+            }
+            if (showSetup) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Dictate from a text field", style = MaterialTheme.typography.titleMedium)
+                        Text("Open a text field with the keyboard visible. Tap Record, speak, then tap Stop. Or hold until the vibration, speak, and release.")
+                        Text("Move the control before recording starts to reposition it. Moving during a hold cancels that recording.")
+                        Text("Password and PIN fields are excluded. Some custom editors need manual copying.", style = MaterialTheme.typography.bodySmall)
+                        OutlinedButton(onClick = openAccessibility) { Text("Accessibility settings") }
+                        if (!notificationsAllowed) OutlinedButton(onClick = { notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) }) {
+                            Text("Allow status notifications")
+                        }
+                        Text("The microphone stays off until you record. Enable cross-app dictation again after the app restarts.", style = MaterialTheme.typography.bodySmall)
+                        Text("Use the physical button", style = MaterialTheme.typography.titleMedium)
+                        Text("Click to start and click again to stop. Or hold until the vibration, speak, and release. Enable cross-app dictation to use it in other apps.")
+                        button.lastEvent?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                        Text("Presses received: ${button.presses}", style = MaterialTheme.typography.bodySmall)
+                        Text("Recording here", style = MaterialTheme.typography.titleMedium)
+                        Text("On first use, allow microphone access, then tap Start recording again. Leaving this screen or locking the phone stops a recording made here without uploading.", style = MaterialTheme.typography.bodySmall)
+                        Text("Stopping normally sends your audio to Fish Audio for transcription. Only the latest clip and transcript are kept.", style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = openSettings) { Text("Microphone settings") }
+                    }
+                }
+            }
         }
     }
 }

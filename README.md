@@ -10,6 +10,8 @@ Tap **Start recording**, allow microphone access on first use, then tap **Start 
 
 For device verification, test permission denial and retry, a five-second recording and playback, repeated recordings, deletion, app relaunch with a saved clip, and leaving or locking the phone while recording.
 
+The home screen keeps cross-app readiness, recording, and the latest transcript near the top. Playback, transcription retry, and deletion remain below the transcript. **Setup & help** expands the longer setup instructions, notification/microphone settings, and physical-button event diagnostics.
+
 ## Physical button
 
 Keep the ATOM Lite powered over USB and Bluetooth enabled on the phone. In the app, tap **Connect button** and allow **Nearby devices** access. Once **Button connected** appears, click the large ATOM button once to record, speak, and click again to stop and transcribe. Short clicks toggle on release. Alternatively, hold until the readiness vibration, speak while holding, and release to stop and transcribe. Both the ATOM and compact control use Android's long-press delay (normally about half a second); speak after the vibration. Presses received are shown on screen; a press begun during transcription stays ignored through its release.
