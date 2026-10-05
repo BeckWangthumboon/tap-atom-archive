@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="480" viewBox="0 0 440 480" role="img" aria-labelledby="title description">
+  <title id="title">A physical button on the back of a phone</title>
+  <desc id="description">Rear-view concept of a phone with a button near its center, intended to be pressed by feel while holding the phone. This illustrates future placement, not the current ATOM enclosure.</desc>
+  <rect width="440" height="480" rx="24" fill="#f5f6f8"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <rect x="105" y="38" width="230" height="404" rx="36" fill="#252b33" stroke="#56616f" stroke-width="3"/>
+    <rect x="126" y="60" width="66" height="100" rx="20" fill="#363e49"/>
+    <circle cx="149" cy="85" r="13" fill="#161b22" stroke="#667382" stroke-width="2"/>
+    <circle cx="169" cy="111" r="13" fill="#161b22" stroke="#667382" stroke-width="2"/>
+    <circle cx="149" cy="137" r="13" fill="#161b22" stroke="#667382" stroke-width="2"/>
+    <text x="220" y="390" text-anchor="middle" font-size="12" letter-spacing="2" fill="#adb8c6">BACK OF PHONE</text>
+
+    <circle cx="220" cy="254" r="43" fill="none" stroke="#ffa15b" stroke-width="2" stroke-dasharray="5 6" opacity="0.65"/>
+    <circle cx="220" cy="254" r="29" fill="#ff9a4d" stroke="#ffc797" stroke-width="3"/>
+    <circle cx="220" cy="254" r="17" fill="none" stroke="#9e4c13" stroke-width="2"/>
+  </g>
+</svg>

@@ -28,19 +28,29 @@ Tap is a physical input button for mobile applications. This repository preserve
 
 The hardware reports presses and releases; the phone decides what they do. Fish Audio provides speech-to-text for the example client. Other applications could use the same button for different actions by integrating the BLE interface or Android library.
 
-*Photo of the prototype to be added.*
+The idea is to put the button on the back of the phone, where you can press it by feel while holding it. This first version uses a separate USB-powered ATOM to test the interaction; the case and mounting are still to be worked out.
+
+![Concept diagram showing a physical button on the back of a phone](assets/diagrams/button-placement.svg)
+
+![USB-powered ATOM Lite placed on a phone case to test rear button placement](assets/photos/atom-prototype.jpg)
+
+*The ATOM Lite on a phone case, with USB power connected. A rough test of where the button could sit.*
 
 - **Tap to toggle:** tap to start recording, then tap again to stop and transcribe.
 - **Hold to talk:** hold until the readiness vibration, speak, and release to transcribe.
 - **Insert or copy:** text goes into a compatible field selected when recording starts. If there is no suitable field, or it changes during recording, the result is offered for copying.
 
-![Tap settings on Samsung, with dictation ready and the physical button connected](assets/screenshots/tap-settings.png)
-
 ![Real button dictation in Samsung Notes: recording, processing, and inserted text](assets/demo/tap-notes-demo.gif)
 
-Tap-to-toggle on the Samsung Galaxy S23+, with Fish Audio transcription inserted into Samsung Notes. [Watch the MP4](assets/demo/tap-notes-demo.mp4). Screenshots: [recording](assets/screenshots/tap-recording.png), [processing](assets/screenshots/tap-processing.png), [inserted text](assets/screenshots/tap-inserted.png).
+Tap-to-toggle on the Samsung Galaxy S23+, with Fish Audio transcription inserted into Samsung Notes.
 
 The microphone records only during dictation, and completed recordings are sent to Fish Audio for transcription.
+
+## Prototype limits
+
+This version has to stay plugged into USB, and there's no case or mounting for it yet. It was mostly built to test the BLE connection, the button interactions, and whether Android could handle dictation across apps. The hardware is still pretty rough.
+
+Ideally, the button would feel like part of the phone. It could fit into a phone case, sit flush enough that you can lay the phone down normally, and potentially get power wirelessly from the phone. There's still a lot to figure out around power, thickness, placement, and how the button actually feels to press.
 
 ## Architecture
 
