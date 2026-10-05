@@ -1,98 +1,141 @@
-# Tap — physical mobile input
+# Tap — ATOM prototype
 
-A general-purpose physical button that sends input events to mobile applications over Bluetooth Low Energy (BLE). The device knows about presses and releases; the client decides what they do.
+## Thesis
 
-The Android app is the first example client: it interprets taps and holds, records through the phone microphone, uses Fish Audio for transcription, and inserts or offers the resulting text for copying. Fish Audio is a prototype dependency of this client, not part of the device interface.
+*Your handwritten thesis goes here.*
 
-See [project.md](project.md) for intent, [roadmap.md](roadmap.md) for hardware work next, and [firmware/README.md](firmware/README.md) for hardware setup. This repository contains the [first ATOM implementation](docs/prototypes/atom-v1.md), intended for a future portfolio archive.
+## The prototype
+
+Tap is a physical input button for mobile applications. This repository preserves the first working implementation: a USB-powered M5Stack ATOM Lite, a BLE interface, and an Android dictation example.
+
+The hardware reports presses and releases; the phone decides what they do. Fish Audio provides speech-to-text for the example client. Other applications could use the same button for different actions by integrating the BLE interface or Android library.
+
+*Photo of the prototype to be added.*
+
+- **Tap to toggle:** tap to start recording, then tap again to stop and transcribe.
+- **Hold to talk:** hold until the readiness vibration, speak, and release to transcribe.
+- **Insert or copy:** text goes into a compatible field selected when recording starts. If there is no suitable field, or it changes during recording, the result is offered for copying.
+
+<img src="assets/screenshots/tap-settings.png" alt="Tap settings on Samsung, with dictation ready and the physical button connected" width="280"> <img src="assets/demo/tap-notes-demo.gif" alt="Real button dictation in Samsung Notes: recording, processing, and inserted text" width="280">
+
+Tap-to-toggle on the Samsung Galaxy S23+, with Fish Audio transcription inserted into Samsung Notes. [Watch the MP4](assets/demo/tap-notes-demo.mp4). Screenshots: [recording](assets/screenshots/tap-recording.png), [processing](assets/screenshots/tap-processing.png), [inserted text](assets/screenshots/tap-inserted.png).
+
+The microphone records only during dictation, and completed recordings are sent to Fish Audio for transcription.
 
 ## Architecture
 
-| Layer | Location | Responsibility |
-| --- | --- | --- |
-| Device firmware | `firmware/` | Board-specific switch input, debounce, BLE advertising, and current button state. |
-| Device interface | [protocol/ble-v1.md](protocol/ble-v1.md) | Discovery, packet format, event continuity, and connection initialization. |
-| Android button integration | [button-android/](button-android/README.md) | BLE connection and validated press/release callbacks, with typed connection status. No Compose, audio, or transcription dependency. |
-| Example dictation client | `app/` | Gesture policy, permissions and service lifecycle, recording, Fish Audio, feedback, text insertion, and recovery. |
-
-The Android app depends on `button-android`; the library does not depend on the app. `BackButtonApplication` wires button callbacks into `DictationSession`, while `PhysicalButtonClient` adapts connection status for the settings UI. The existing foreground service keeps listening when cross-app dictation is enabled.
-
-Other clients can implement the BLE interface directly or use the Android library without adopting dictation. Direct support in another app requires that app to integrate the interface. The board, case, mounting, and power design can change independently of BLE v1; incompatible interface changes should use a new documented protocol version.
-
-## Build and install
-
-Use JDK 17 or 21, Android SDK Platform 35, and Build Tools 35.0.0. Open the repository in Android Studio, or set `ANDROID_HOME` to your SDK directory. Alternatively, set `sdk.dir=/absolute/path/to/android-sdk` in the ignored `local.properties` file. Use the checked-in Gradle wrapper:
-
-```sh
-./gradlew :app:assembleDebug :app:testDebugUnitTest :button-android:testDebugUnitTest :app:lintDebug :button-android:lintDebug
+```text
+Physical button → BLE events → Android client → recording → Fish Audio → text
 ```
 
-Connect the intended phone through USB debugging or paired wireless debugging. Get its current serial from `adb devices -l`; wireless debugging addresses and ports can change. Select the device explicitly:
+- [firmware/](firmware/) reads the ATOM's built-in switch on GPIO39, applies 35 ms debounce, and publishes button state over BLE.
+- [button-android/](button-android/) manages the connection and reports validated press, release, and signal-loss events. It is independent of recording and transcription.
+- [app/](app/) interprets taps and holds, records through the phone microphone, and handles transcription and text delivery. A foreground service keeps the button available across apps.
+
+The firmware has no microphone or knowledge of AI services. Gesture behavior belongs to the client. Applications such as Wispr Flow or another voice agent would need to integrate the button interface themselves.
+
+## Setup
+
+You need an **M5Stack ATOM Lite**, a USB cable, an **Android 13+ phone**, and a **Fish Audio API key** with transcription credits. The prototype was tested on a Samsung Galaxy S23+ running Android 16. The firmware commands below use macOS serial-port paths; run them from the repository root.
+
+### 1. Flash the ATOM
+
+Connect the board over USB. Install the pinned firmware tools and upload the firmware, replacing `/dev/cu.YOUR_BOARD` with the board's serial port:
 
 ```sh
-adb -s SERIAL install -r app/build/outputs/apk/debug/app-debug.apk
-adb -s SERIAL shell am start -n dev.backbutton/.MainActivity
+python3 -m venv "$HOME/Library/Caches/tap-tools/venv"
+source "$HOME/Library/Caches/tap-tools/venv/bin/activate"
+python -m pip install -r firmware/requirements.txt
+pio run -d firmware -t upload --upload-port /dev/cu.YOUR_BOARD
 ```
 
-## Fish Audio key
+Keep any serial monitor closed while flashing. USB also powers the board during use. The large built-in button is the input; the small reset switch restarts the board.
 
-Fish Audio is the example client's current speech-to-text provider. Configure its key in **Tap → Settings → API key**. For development, you can also put `FISH_AUDIO_KEY=your_key` in the ignored root `.env` file and provision it after installing:
+### 2. Install Tap
+
+Open the repository in Android Studio. Use JDK 17 or 21 and install Android SDK Platform 35 and Build Tools 35.0.0. Connect the phone with USB debugging enabled, select the `app` run configuration and your phone, then click **Run**.
+
+### 3. Configure the phone
+
+1. In Tap, select **Text insertion**, then enable **Tap dictation** in Android accessibility settings. If Android restricts the sideloaded app, enable **Allow restricted settings** in its app-info menu before trying again.
+2. Allow **Microphone** access. Dictation becomes ready automatically; no switch is required. Notifications are optional, but allowing them makes the ready notification visible.
+3. Provision the Fish Audio key from the local `.env` file using the steps below.
+4. Enable Bluetooth, keep the ATOM powered, and select **Bluetooth button → Connect**. Allow **Nearby devices** access and wait for **Connected**.
+
+Keep your existing keyboard. No separate **Display over other apps** permission is needed. Missing permissions or a disconnected button appear in red.
+
+Create a `.env` file in the repository root with your key:
+
+```dotenv
+FISH_AUDIO_KEY=your_key
+```
+
+Get the phone's serial from `adb devices -l`, then provision the installed debug app:
 
 ```sh
 python3 scripts/provision_fish_key.py --serial SERIAL
 ```
 
-The script sends the key to app-private storage without printing it. Reprovision after uninstalling the app or clearing its data. Keep keys out of commits, APKs, and logs. Transcription needs internet access and Fish API credits; recorded audio is sent to Fish Audio.
+The script copies the key into app-private storage on the phone. The build does not read `.env` or embed the key in the APK. `.env` is Git-ignored; keep the key out of commits and logs. Reprovision after uninstalling the app or clearing its data. Manual entry through **Transcription → API key** remains available as an alternative.
 
-## Samsung setup
+### 4. Try dictation
 
-The test phone is a Samsung Galaxy S23+ (SM-S916U), running Android 16. Its One UI version is unconfirmed. The installed app appears as **Tap**.
+Select a text field and tap twice, or hold and release. A passive waveform shows recording and processing. When insertion is unavailable, use **Copy** on the floating result or copy the last transcript from Tap. Errors and transcription retry controls appear in the app's settings.
 
-1. In **Settings → Text insertion**, open **Installed apps → Tap dictation**. Enable the service and accept the prompt. An accessibility shortcut is unnecessary. If Android blocks this sideloaded app, open its app info, select **Allow restricted settings** from the menu if offered, and return to Accessibility.
-2. Return to Tap, allow microphone access, configure your **API key**, and select **Permissions → Can dictate in other apps** to finish setup or enable dictation; it shows **Ready** when active. Allowing notifications is recommended so the ready notification and Turn off action are visible.
-3. Power the ATOM over USB, enable Bluetooth, open **Bluetooth button**, choose **Connect**, and allow **Nearby devices** access. Wait for **Connected**.
-4. Click the physical button to start and click again to finish, or hold until the readiness vibration, speak, and release. A selected text field and visible keyboard are optional. The slim waveform shows recording and processing and accepts no taps. It is hidden while idle and disappears after successful insertion. Red signals an error; details appear in settings. When insertion is unavailable, × and Copy let you dismiss or copy the floating result without showing transcript text.
+## BLE reference
 
-Keep the existing keyboard selected. No separate **Display over other apps** permission is required. Open the app and enable cross-app dictation again after a process restart, force stop, or phone restart. If Samsung kills the ready service during use, try the app-specific **Battery → Unrestricted** setting.
+<details>
+<summary>Interface v1 and Android integration</summary>
 
-Automatic insertion depends on the original editor exposing a usable Android input connection and its field, text, and selection staying unchanged. Recording continues through ordinary field and app changes; the result is offered for copying instead of insertion. Password and PIN fields block or interrupt capture. The floating result has × on the left and Copy on the right. Both hide the result while keeping **Last transcript** in settings. Its × hides it without deleting the text; **Last transcript → View** reopens it. The previous transcript stays available until a new nonempty transcription succeeds. Dictation does not press Send or submit a form.
+The button is a BLE peripheral; the phone is the central. Discover it by the advertised service UUID. The state characteristic supports reads and notifications, with no writes.
 
-The indicator sits above the keyboard and moves above a nearby growing composer. Floating keyboards use their exposed window bounds. Without a keyboard, it sits near the bottom of the safe screen area; keyboard layouts with too little room above them use the top edge instead.
+| Item | UUID |
+| --- | --- |
+| Button service | `b8b10001-64df-4f6d-b7d1-86a6e72f8d21` |
+| State characteristic | `b8b10002-64df-4f6d-b7d1-86a6e72f8d21` |
+| CCCD | `00002902-0000-1000-8000-00805f9b34fb` |
 
-## Device checks
+Write `01 00` to the CCCD to enable notifications. Reads and notifications use the same six-byte payload:
 
-Use the physical Samsung to check dictation in everyday apps, physical-button clicks and holds, microphone-level feedback, portrait/landscape positioning, idle/background behavior, locking, Bluetooth loss/reconnection, and interruptions. Also check permission denial, API-key configuration, and last-transcript copying/dismissal/recovery. Historical test results are not a substitute for testing the current build.
+| Offset | Bytes | Meaning |
+| --- | --- | --- |
+| 0 | 1 | Version: `01`. |
+| 1 | 1 | State: `00` released, `01` pressed. |
+| 2 | 4 | Unsigned 32-bit edge sequence, little-endian. |
 
-## Optional editor integration test
+The sequence starts at zero on boot and increments on each debounced transition, including while disconnected, wrapping modulo 2^32. A hold produces one press and one release. Long press and double press are interpreted by the client.
 
-Use an emulator or dedicated test device without a Fish key, with Chrome set up and the app's accessibility service enabled. This test uses synthetic transcripts and a separate native editor fixture. It grants microphone permission and temporarily enables dictation; avoid running it against personal browser fields.
+After enabling notifications, read the current state to establish a baseline. This read must not generate a synthetic press. The Android library rejects invalid packets, ignores duplicate or old notifications, and reports interrupted continuity when the sequence or state progression is unexpected. The client cancels its active gesture and waits for fresh input. There is no replay queue; a missing final release cannot be detected until another packet or a disconnection reveals the problem.
 
-Start the fixture server in a separate terminal:
+Another Android client can depend on `implementation(project(":button-android"))` and use press, release, and signal-loss callbacks. Methods and callbacks run on the main thread. The host owns runtime permissions, background listening, and gesture policy.
+
+Implementation details: [firmware](firmware/src/main.cpp), [event validation](button-android/src/main/java/dev/backbutton/button/ButtonEvents.kt), and [Android connection](button-android/src/main/java/dev/backbutton/button/BleButtonConnection.kt).
+
+</details>
+
+## Validation and limitations
+
+Tap and hold were tested on the physical Samsung, including dictation into LINE and browser fields. Emulator checks cover text insertion, recording across editor changes, transcript recovery, permission reporting, and recording/persistence failures. Automatic activation and background availability were also checked.
+
+This version has a few practical limits:
+
+- USB power and the ATOM's built-in switch; no battery or integrated phone case.
+- One active BLE client, with no authenticated pairing or bonding.
+- One automatic reconnect attempt after a ready connection is lost. Other failed connections need an explicit retry.
+- Text insertion depends on editor compatibility and an unchanged field; copying is the fallback.
+- Background availability depends on Android's service and power management. Open Tap again after an app or phone restart.
+
+Run the Android unit tests and lint:
 
 ```sh
-python3 -m http.server 8765 --bind 127.0.0.1 --directory tests/fixtures
+./gradlew :app:testDebugUnitTest :button-android:testDebugUnitTest :app:lintDebug :button-android:lintDebug
 ```
 
-Then build, install, and run on the intended test device:
+Run the firmware debounce tests:
 
 ```sh
-./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
-adb -s SERIAL install -r app/build/outputs/apk/debug/app-debug.apk
-adb -s SERIAL install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-adb -s SERIAL reverse tcp:8765 tcp:8765
-adb -s SERIAL shell am instrument -w -e browserFixture true -e class dev.backbutton.ChromeInsertionTest#insertionPreservesTextAndRejectsChangedTargets dev.backbutton.test/androidx.test.runner.AndroidJUnitRunner
+c++ -std=c++11 -Wall -Wextra -Werror firmware/tests/button_debounce_test.cpp -o /tmp/tap-debounce-test
+/tmp/tap-debounce-test
 ```
 
-For native-only record-anywhere, status, and recovery checks (no browser server needed), use:
-
-```sh
-adb -s SERIAL shell am instrument -w -e nativeFixture true -e class 'dev.backbutton.ChromeInsertionTest#recordAnywhereKeepsCaptureAcrossInputChangesAndOffersRecovery,dev.backbutton.ChromeInsertionTest#nativeStatusIsPassiveAnchoredAndHiddenWhileIdle' dev.backbutton.test/androidx.test.runner.AndroidJUnitRunner
-```
-
-On that same dedicated fixture device, the client regression checks reproduce a temporary accessibility-service disconnect, a blocked notification channel, a microphone error, and transcript-save failure. Transcription uses a synthetic result and never uploads audio:
-
-```sh
-adb -s SERIAL shell am instrument -w -e nativeFixture true -e class dev.backbutton.ClientRegressionTest dev.backbutton.test/androidx.test.runner.AndroidJUnitRunner
-```
-
-These regression checks leave the fixture's dictation notification channel blocked. Enable it again in Android notification settings before manually checking the ready notification.
+Additional Android integration checks live in [app/src/androidTest/](app/src/androidTest/). They use synthetic transcription and require an emulator or dedicated fixture device without a real Fish Audio key; fixture requirements are documented in the test code.
