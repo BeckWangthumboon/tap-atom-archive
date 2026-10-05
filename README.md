@@ -1,8 +1,26 @@
 # Tap — ATOM prototype
 
-## Thesis
+Since ~May 2026, I use Wispr Flow a lot on my MacBook. I press Fn, talk, and the text shows up. At this point it’s muscle memory.
 
-*Your handwritten thesis goes here.*
+But I don’t really use it on my phone. Having to tap a floating button feels awkward, and sometimes it gets in the way of something else I’m trying to touch. It works, but I don’t find myself reaching for it the way I do desktop. 
+
+So I wanted to try putting a physical button on the back of my phone. Something I could press without looking, like Fn on my MacBook.
+
+This is the first rough version of that idea. It’s an ATOM Lite connected to an Android phone over Bluetooth. You can tap to start and stop dictation, or hold the button while you talk. The phone records your voice and turns it into text with STT models and outputs in straight in your inbox, just like how Wispr Flow works. 
+
+The hardware only tells the phone when it’s pressed or released, so another app could use it for something completely different.
+
+That’s also why I think this could be useful for agents. Maybe you press a button, say what you want, and let an agent get started. Our phones already have most of what’s needed. I’m interested in what happens when we give them a physical control that makes those interactions easier. Perhaps AI hardware doesn't really need to be reinvented, but instead integrated into our devices. What if this could activate my remote Hermes agent? What if I could just activate my model with a touch instead of navigating to the right app, chat, and text boxes? 
+
+For now, this is a pretty rough hardware prototype. It works well enough to test the idea, and the next step is figuring out how to make the actual button fit and feel right.
+
+## Why a physical button?
+
+The starting point was mobile dictation controlled through a floating on-screen button. In this Samsung Notes setup, Wispr Flow's control sits above the keyboard. Tap explores moving that interaction to a physical button, so recording can be started and stopped without reaching for an on-screen control. 
+
+![Wispr Flow's floating dictation button above the keyboard in Samsung Notes](assets/screenshots/wispr-flow-mobile.jpg)
+
+*Wispr Flow on Mobile*
 
 ## The prototype
 
@@ -16,7 +34,9 @@ The hardware reports presses and releases; the phone decides what they do. Fish 
 - **Hold to talk:** hold until the readiness vibration, speak, and release to transcribe.
 - **Insert or copy:** text goes into a compatible field selected when recording starts. If there is no suitable field, or it changes during recording, the result is offered for copying.
 
-<img src="assets/screenshots/tap-settings.png" alt="Tap settings on Samsung, with dictation ready and the physical button connected" width="280"> <img src="assets/demo/tap-notes-demo.gif" alt="Real button dictation in Samsung Notes: recording, processing, and inserted text" width="280">
+![Tap settings on Samsung, with dictation ready and the physical button connected](assets/screenshots/tap-settings.png)
+
+![Real button dictation in Samsung Notes: recording, processing, and inserted text](assets/demo/tap-notes-demo.gif)
 
 Tap-to-toggle on the Samsung Galaxy S23+, with Fish Audio transcription inserted into Samsung Notes. [Watch the MP4](assets/demo/tap-notes-demo.mp4). Screenshots: [recording](assets/screenshots/tap-recording.png), [processing](assets/screenshots/tap-processing.png), [inserted text](assets/screenshots/tap-inserted.png).
 
@@ -84,24 +104,27 @@ Select a text field and tap twice, or hold and release. A passive waveform shows
 
 ## BLE reference
 
-<details>
-<summary>Interface v1 and Android integration</summary>
+Interface v1 and Android integration
 
 The button is a BLE peripheral; the phone is the central. Discover it by the advertised service UUID. The state characteristic supports reads and notifications, with no writes.
 
-| Item | UUID |
-| --- | --- |
-| Button service | `b8b10001-64df-4f6d-b7d1-86a6e72f8d21` |
+
+| Item                 | UUID                                   |
+| -------------------- | -------------------------------------- |
+| Button service       | `b8b10001-64df-4f6d-b7d1-86a6e72f8d21` |
 | State characteristic | `b8b10002-64df-4f6d-b7d1-86a6e72f8d21` |
-| CCCD | `00002902-0000-1000-8000-00805f9b34fb` |
+| CCCD                 | `00002902-0000-1000-8000-00805f9b34fb` |
+
 
 Write `01 00` to the CCCD to enable notifications. Reads and notifications use the same six-byte payload:
 
-| Offset | Bytes | Meaning |
-| --- | --- | --- |
-| 0 | 1 | Version: `01`. |
-| 1 | 1 | State: `00` released, `01` pressed. |
-| 2 | 4 | Unsigned 32-bit edge sequence, little-endian. |
+
+| Offset | Bytes | Meaning                                       |
+| ------ | ----- | --------------------------------------------- |
+| 0      | 1     | Version: `01`.                                |
+| 1      | 1     | State: `00` released, `01` pressed.           |
+| 2      | 4     | Unsigned 32-bit edge sequence, little-endian. |
+
 
 The sequence starts at zero on boot and increments on each debounced transition, including while disconnected, wrapping modulo 2^32. A hold produces one press and one release. Long press and double press are interpreted by the client.
 
@@ -110,8 +133,6 @@ After enabling notifications, read the current state to establish a baseline. Th
 Another Android client can depend on `implementation(project(":button-android"))` and use press, release, and signal-loss callbacks. Methods and callbacks run on the main thread. The host owns runtime permissions, background listening, and gesture policy.
 
 Implementation details: [firmware](firmware/src/main.cpp), [event validation](button-android/src/main/java/dev/backbutton/button/ButtonEvents.kt), and [Android connection](button-android/src/main/java/dev/backbutton/button/BleButtonConnection.kt).
-
-</details>
 
 ## Validation and limitations
 
